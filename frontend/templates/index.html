@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IoV Wi-Fi Security Testing Platform</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◉</span>
+    <div>
+      <h1>IoV Wi-Fi Security Testing Platform</h1>
+      <small>ARTC × NCU CSIE &middot; UN R155 / ISO-SAE 21434 oriented</small>
+    </div>
+  </div>
+  <div class="status">
+    <span id="conn-dot" class="dot"></span>
+    <span id="conn-text">connecting…</span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="scan">1. Scan</button>
+  <button class="tab" data-tab="audit">2. Config Audit</button>
+  <button class="tab" data-tab="attack">3. Attack Scenarios</button>
+  <button class="tab" data-tab="wids">4. WIDS Monitor</button>
+  <button class="tab" data-tab="logs">5. Logs</button>
+</nav>
+
+<main>
+  <!-- ============================================= SCAN -->
+  <section id="tab-scan" class="panel active">
+    <div class="panel-head">
+      <h2>Wireless Environment Scan</h2>
+      <div class="controls">
+        <label>Interface
+          <select id="scan-iface"></select>
+        </label>
+        <label>Duration (s)
+          <input id="scan-duration" type="number" value="10" min="5" max="60">
+        </label>
+        <button id="scan-btn" class="primary">Start Scan</button>
+      </div>
+    </div>
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>BSSID</th><th>SSID</th><th>Ch</th><th>Signal</th>
+          <th>Encryption</th><th>WPS</th><th>PMF</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="scan-tbody"><tr><td colspan="8" class="empty">No scan yet.</td></tr></tbody>
+    </table>
+  </section>
+
+  <!-- ============================================= AUDIT -->
+  <section id="tab-audit" class="panel">
+    <div class="panel-head">
+      <h2>Baseline Security Config Audit</h2>
+      <div class="controls">
+        <label>Target BSSID
+          <input id="audit-bssid" placeholder="AA:BB:CC:11:22:33">
+        </label>
+        <button id="audit-btn" class="primary">Run Audit</button>
+      </div>
+    </div>
+    <div id="audit-result" class="result-card">
+      <p class="empty">No audit performed yet. Pick a network from the Scan tab or enter a BSSID.</p>
+    </div>
+  </section>
+
+  <!-- ============================================= ATTACK -->
+  <section id="tab-attack" class="panel">
+    <div class="panel-head">
+      <h2>Attack Scenario Runner <small>(wifite2 / aircrack-ng / reaver / hostapd)</small></h2>
+    </div>
+
+    <div class="scenario-grid">
+      <div class="scenario-form">
+        <label>Scenario
+          <select id="scenario-select">
+            <option value="wifite_auto">wifite2 — automated audit</option>
+            <option value="handshake_cap">Capture WPA handshake</option>
+            <option value="deauth">Deauth flood (PMF test)</option>
+            <option value="wps_bruteforce">WPS brute-force (Reaver)</option>
+            <option value="rogue_ap">Rogue AP / Evil Twin (hostapd)</option>
+            <option value="pmf_probe">PMF (802.11w) probe</option>
+          </select>
+        </label>
+        <label>Interface <input id="atk-iface" value="wlan0mon"></label>
+        <label>Target BSSID <input id="atk-bssid" placeholder="AA:BB:CC:11:22:33"></label>
+        <label>Channel <input id="atk-channel" type="number" value="6"></label>
+        <label>Extra params (JSON)
+          <input id="atk-extra" placeholder='{"wordlist":"/path/rockyou.txt"}'>
+        </label>
+        <div class="row">
+          <button id="atk-start" class="primary">Start</button>
+          <button id="atk-stop" class="danger">Stop current</button>
+        </div>
+        <p class="hint">⚠ Only run against authorized test targets (ARTC T-BOX bench).</p>
+      </div>
+
+      <div class="scenario-output">
+        <div class="out-head">
+          <span>Live output</span>
+          <span id="current-job" class="job-tag">no job</span>
+        </div>
+        <pre id="atk-output" class="console">Ready.\n</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= WIDS -->
+  <section id="tab-wids" class="panel">
+    <div class="panel-head">
+      <h2>WIDS — Wireless Intrusion Detection</h2>
+      <div class="controls">
+        <label>Monitor Iface <input id="wids-iface" value="wlan0mon"></label>
+        <button id="wids-start" class="primary">Start</button>
+        <button id="wids-stop" class="danger">Stop</button>
+      </div>
+    </div>
+    <div id="wids-events" class="events"></div>
+  </section>
+
+  <!-- ============================================= LOGS -->
+  <section id="tab-logs" class="panel">
+    <div class="panel-head">
+      <h2>Audit Log</h2>
+      <button id="logs-refresh" class="primary">Refresh</button>
+    </div>
+    <pre id="logs-box" class="console">(empty)</pre>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
