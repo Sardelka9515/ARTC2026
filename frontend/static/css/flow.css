@@ -1,0 +1,336 @@
+/* ============================================================
+   Flow / Pipeline view — animated sequential test runner
+   Builds on the shared tokens defined in style.css
+   ============================================================ */
+
+.flow-body { min-height: 100vh; }
+
+/* ---- run bar -------------------------------------------------------------- */
+.run-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.run-config { display: flex; gap: 14px; flex-wrap: wrap; }
+.run-config label small { color: var(--muted); font-weight: 400; }
+.run-actions { display: flex; gap: 10px; }
+button.big { padding: 11px 22px; font-size: 14px; font-weight: 600; }
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+button.ghost:hover { color: var(--text); border-color: var(--accent); }
+button.ghost.sm { padding: 4px 10px; font-size: 12px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.flow-main { padding: 28px 24px 40px; max-width: 1280px; margin: 0 auto; }
+
+/* ---- pipeline row --------------------------------------------------------- */
+.pipeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-bottom: 32px;
+}
+
+/* connector arrow between cards */
+.connector {
+  flex: 0 0 56px;
+  align-self: flex-start;
+  margin-top: 58px;
+  height: 4px;
+  position: relative;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.connector::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+}
+.connector.flowing::after { animation: flow-dash 1s linear infinite; }
+.connector.done { background: var(--ok); }
+@keyframes flow-dash { to { transform: translateX(100%); } }
+
+/* arrow head */
+.connector .head {
+  position: absolute;
+  right: -2px; top: 50%;
+  width: 9px; height: 9px;
+  border-top: 3px solid var(--border);
+  border-right: 3px solid var(--border);
+  transform: translateY(-50%) rotate(45deg);
+  transition: border-color .3s;
+}
+.connector.done .head { border-color: var(--ok); }
+.connector.flowing .head { border-color: var(--accent); }
+
+/* ---- stage card ----------------------------------------------------------- */
+.card-col { flex: 1 1 0; min-width: 0; }
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 16px;
+  text-align: center;
+  transition: border-color .3s, box-shadow .3s, transform .3s;
+  overflow: hidden;
+}
+.card .num {
+  position: absolute; top: 10px; left: 12px;
+  font-size: 11px; color: var(--muted); font-family: monospace;
+}
+.card .stage-icon {
+  font-size: 30px;
+  line-height: 1;
+  margin: 6px 0 10px;
+  display: inline-block;
+}
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.card .desc { margin: 0; font-size: 11.5px; color: var(--muted); min-height: 30px; }
+
+/* status badge inside card */
+.card .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  transition: all .3s;
+}
+.card .badge .spin {
+  width: 11px; height: 11px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  display: none;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* state: pending (default) */
+.card[data-state="pending"] { opacity: .75; }
+
+/* state: running */
+.card[data-state="running"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 24px -6px var(--accent);
+  opacity: 1;
+  animation: card-pulse 1.6s ease-in-out infinite;
+}
+.card[data-state="running"] .badge {
+  background: #0f1f2e; color: var(--info); border-color: var(--accent);
+}
+.card[data-state="running"] .badge .spin { display: inline-block; }
+.card[data-state="running"] .stage-icon { animation: bob 1.4s ease-in-out infinite; }
+@keyframes card-pulse {
+  0%,100% { box-shadow: 0 0 0 1px var(--accent), 0 0 22px -8px var(--accent); }
+  50%     { box-shadow: 0 0 0 1px var(--accent), 0 0 30px -2px var(--accent); }
+}
+@keyframes bob { 50% { transform: translateY(-4px); } }
+
+/* sweeping shimmer while running */
+.card[data-state="running"]::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(47,129,247,.12) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* state: passed */
+.card[data-state="passed"] {
+  border-color: var(--ok); opacity: 1;
+  animation: pop-in .4s ease;
+}
+.card[data-state="passed"] .badge {
+  background: #0d2818; color: var(--ok); border-color: var(--ok);
+}
+.card[data-state="passed"] .stage-icon { color: var(--ok); }
+
+/* state: warn (ran, but findings) */
+.card[data-state="warn"] { border-color: var(--warn); opacity: 1; }
+.card[data-state="warn"] .badge {
+  background: #2a1f08; color: var(--warn); border-color: var(--warn);
+}
+
+/* state: failed */
+.card[data-state="failed"] {
+  border-color: var(--fail); opacity: 1;
+  animation: shake .4s ease;
+}
+.card[data-state="failed"] .badge {
+  background: #2a0f12; color: var(--fail); border-color: var(--fail);
+}
+.card[data-state="failed"] .stage-icon { color: var(--fail); }
+
+@keyframes pop-in { 0% { transform: scale(.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); } 40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); } 80% { transform: translateX(4px); }
+}
+
+/* per-card result summary (small text under badge) */
+.card .result {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  min-height: 0;
+}
+
+/* ---- error / detail panel that drops below a failed card ------------------ */
+.err-panel {
+  margin-top: 14px;
+  border: 1px solid var(--fail);
+  background: #1a0e10;
+  border-radius: 10px;
+  padding: 0 14px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height .35s ease, opacity .35s ease, padding .35s ease;
+  position: relative;
+}
+.err-panel.show { max-height: 320px; opacity: 1; padding: 12px 14px; overflow: auto; }
+.err-panel::before {
+  /* down arrow connecting card → error, echoing the sketch */
+  content: "";
+  position: absolute; top: -8px; left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px; height: 12px;
+  background: #1a0e10;
+  border-left: 1px solid var(--fail);
+  border-top: 1px solid var(--fail);
+}
+.err-panel .err-title {
+  color: var(--fail); font-weight: 700; font-size: 12px;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.err-panel pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: "SF Mono", Consolas, monospace; font-size: 11.5px;
+  color: #f0b6b6;
+}
+/* detail list (e.g. audit checks) */
+.err-panel .det {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 5px 0; border-bottom: 1px dashed #3a2023; font-size: 11.5px;
+}
+.err-panel .det:last-child { border-bottom: 0; }
+.err-panel .det .dn { color: #e6c3c3; }
+
+/* warn variant of the panel */
+.err-panel.warn { border-color: var(--warn); background: #1c1608; }
+.err-panel.warn::before { background: #1c1608; border-color: var(--warn); }
+.err-panel.warn .err-title { color: var(--warn); }
+.err-panel.warn pre { color: #e6d29a; }
+.err-panel.warn .det { border-color: #3a3018; }
+.err-panel.warn .det .dn { color: #e6d8b0; }
+
+/* ---- dock: progress + logs ------------------------------------------------ */
+.dock {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dock-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+.dock-title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.dock-icon { color: var(--accent); }
+.dock-stat {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 2px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em;
+}
+.dock-stat.running { color: var(--info); border-color: var(--accent); }
+.dock-stat.done    { color: var(--ok); border-color: var(--ok); }
+.dock-stat.failed  { color: var(--fail); border-color: var(--fail); }
+.chevron { font-size: 20px; color: var(--muted); transition: transform .3s; }
+.dock.collapsed .chevron { transform: rotate(-90deg); }
+
+/* progress bar */
+.progress-wrap { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.progress-track {
+  flex: 1; height: 10px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--border); overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--info));
+  border-radius: 6px;
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+  position: relative;
+}
+.progress-fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+.progress-fill.done { background: linear-gradient(90deg, var(--ok), #2ea043); }
+.progress-fill.failed { background: linear-gradient(90deg, var(--fail), #da3633); }
+.progress-fill.idle::after { display: none; }
+.progress-label { font-size: 13px; font-family: monospace; color: var(--muted); min-width: 42px; text-align: right; }
+
+/* logs */
+.dock-body { max-height: 420px; transition: max-height .35s ease; overflow: hidden; }
+.dock.collapsed .dock-body, .dock.collapsed .progress-wrap { display: none; }
+.log-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+}
+.logstream {
+  max-height: 340px; overflow: auto;
+  padding: 8px 16px 16px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+  background: #0b0f14;
+}
+.log-empty { color: var(--muted); text-align: center; padding: 28px; font-family: inherit; }
+.log-line {
+  display: flex; gap: 10px; padding: 2px 0;
+  animation: log-in .25s ease;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+@keyframes log-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+.log-line .lt { color: #5a6472; flex: 0 0 auto; }
+.log-line .lc { flex: 0 0 64px; color: var(--muted); text-transform: uppercase; font-size: 10px; padding-top: 1px; }
+.log-line .lm { flex: 1; color: #c9d1d9; word-break: break-word; }
+.log-line.lv-info .lc { color: var(--info); }
+.log-line.lv-ok   .lc { color: var(--ok); }
+.log-line.lv-warn .lc { color: var(--warn); }
+.log-line.lv-fail .lc { color: var(--fail); }
+.log-line.lv-fail .lm { color: #f0b6b6; }
+.log-line.lv-ok   .lm { color: #b6e6c3; }
+
+@media (max-width: 880px) {
+  .pipeline { flex-direction: column; }
+  .connector { width: 4px; height: 40px; flex-basis: 40px; margin: 0 0 0 50%; }
+  .connector .head { right: 50%; top: auto; bottom: -2px; transform: translateX(50%) rotate(135deg); }
+  .card-col { width: 100%; }
+}

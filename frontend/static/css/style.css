@@ -34,6 +34,18 @@ html, body {
   color: var(--accent);
 }
 .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);}
+.flow-link {
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-right: 8px;
+  transition: border-color .15s, background .15s;
+}
+.flow-link:hover { border-color: var(--accent); background: #242c38; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fail); display: inline-block;}
 .dot.ok { background: var(--ok); }
 

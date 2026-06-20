@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pipeline · IoV Wi-Fi Security Testing</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body class="flow-body">
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◉</span>
+    <div>
+      <h1>Security Test Pipeline</h1>
+      <small>ARTC × NCU CSIE &middot; sequential audit flow</small>
+    </div>
+  </div>
+  <div class="status">
+    <a href="{{ url_for('index') }}" class="flow-link">⬑ Classic Dashboard</a>
+    <span id="conn-dot" class="dot"></span>
+    <span id="conn-text">connecting…</span>
+  </div>
+</header>
+
+<!-- run controls -->
+<div class="run-bar">
+  <div class="run-config">
+    <label>Interface
+      <select id="cfg-iface"><option value="wlan0">wlan0</option></select>
+    </label>
+    <label>Attack scenario
+      <select id="cfg-scenario">
+        <option value="pmf_probe">PMF (802.11w) probe</option>
+        <option value="handshake_cap">Capture WPA handshake</option>
+        <option value="deauth">Deauth flood</option>
+        <option value="wifite_auto">wifite2 — automated audit</option>
+        <option value="wps_bruteforce">WPS brute-force (Reaver)</option>
+      </select>
+    </label>
+    <label>Target BSSID <small>(auto from scan if blank)</small>
+      <input id="cfg-bssid" placeholder="auto-detect">
+    </label>
+  </div>
+  <div class="run-actions">
+    <button id="run-btn" class="primary big">▶ Run Pipeline</button>
+    <button id="reset-btn" class="ghost">↺ Reset</button>
+  </div>
+</div>
+
+<main class="flow-main">
+  <!-- ======================================= PIPELINE OF CARDS -->
+  <div class="pipeline" id="pipeline">
+    <!-- stage cards injected by JS -->
+  </div>
+
+  <!-- ======================================= PROGRESS + LOGS -->
+  <section class="dock">
+    <div class="dock-head" id="dock-head">
+      <div class="dock-title">
+        <span class="dock-icon">▤</span>
+        <span>Progress &amp; Live Logs</span>
+        <span id="dock-stat" class="dock-stat">idle</span>
+      </div>
+      <span class="chevron" id="dock-chevron">⌄</span>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span class="progress-label" id="progress-label">0%</span>
+    </div>
+
+    <div class="dock-body" id="dock-body">
+      <div class="log-toolbar">
+        <span id="log-count" class="log-count">0 lines</span>
+        <button id="log-clear" class="ghost sm">clear</button>
+      </div>
+      <div class="logstream" id="logstream">
+        <div class="log-empty">No activity yet — press <b>Run Pipeline</b> to begin.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='js/flow.js') }}"></script>
+</body>
+</html>

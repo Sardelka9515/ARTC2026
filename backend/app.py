@@ -36,6 +36,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/flow")
+def flow():
+    """Flow-based pipeline view: runs Scan → Audit → Attack → WIDS in sequence."""
+    return render_template("flow.html")
+
+
 # ---- REST API ---------------------------------------------------------------
 @app.route("/api/interfaces", methods=["GET"])
 def api_interfaces():
