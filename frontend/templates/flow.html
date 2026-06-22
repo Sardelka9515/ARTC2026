@@ -13,8 +13,8 @@
   <div class="brand">
     <span class="logo">◉</span>
     <div>
-      <h1>Security Test Pipeline</h1>
-      <small>ARTC × NCU CSIE &middot; sequential audit flow</small>
+      <h1>檢測流程 Pipeline</h1>
+      <small>二、研究方法與實施步驟 &middot; AP 模式 / Client·Station 模式</small>
     </div>
   </div>
   <div class="status">
@@ -27,24 +27,15 @@
 <!-- run controls -->
 <div class="run-bar">
   <div class="run-config">
-    <label>Interface
+    <label>監聽介面 Interface
       <select id="cfg-iface"><option value="wlan0">wlan0</option></select>
     </label>
-    <label>Attack scenario
-      <select id="cfg-scenario">
-        <option value="pmf_probe">PMF (802.11w) probe</option>
-        <option value="handshake_cap">Capture WPA handshake</option>
-        <option value="deauth">Deauth flood</option>
-        <option value="wifite_auto">wifite2 — automated audit</option>
-        <option value="wps_bruteforce">WPS brute-force (Reaver)</option>
-      </select>
-    </label>
-    <label>Target BSSID <small>(auto from scan if blank)</small>
+    <label>受測 T-BOX BSSID <small>(留空則自動掃描選定)</small>
       <input id="cfg-bssid" placeholder="auto-detect">
     </label>
   </div>
   <div class="run-actions">
-    <button id="run-btn" class="primary big">▶ Run Pipeline</button>
+    <button id="run-btn" class="primary big">▶ 開始檢測 Run</button>
     <button id="reset-btn" class="ghost">↺ Reset</button>
   </div>
 </div>
@@ -60,7 +51,7 @@
     <div class="dock-head" id="dock-head">
       <div class="dock-title">
         <span class="dock-icon">▤</span>
-        <span>Progress &amp; Live Logs</span>
+        <span>進度與即時日誌 · Progress &amp; Logs</span>
         <span id="dock-stat" class="dock-stat">idle</span>
       </div>
       <span class="chevron" id="dock-chevron">⌄</span>
@@ -79,7 +70,7 @@
         <button id="log-clear" class="ghost sm">clear</button>
       </div>
       <div class="logstream" id="logstream">
-        <div class="log-empty">No activity yet — press <b>Run Pipeline</b> to begin.</div>
+        <div class="log-empty">尚無活動 — 按下 <b>開始檢測</b> 以執行檢測流程。</div>
       </div>
     </div>
   </section>
