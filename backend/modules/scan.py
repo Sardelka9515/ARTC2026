@@ -90,8 +90,9 @@ def _parse_iw_scan(text):
             continue
         if not current:
             continue
-        if "SSID:" in line:
-            current["ssid"] = line.split("SSID:", 1)[1].strip() or "<hidden>"
+        ssid = re.match(r"\s*SSID:\s*(.*)$", line)
+        if ssid:
+            current["ssid"] = ssid.group(1).strip() or "<hidden>"
         elif "signal:" in line:
             sig = re.search(r"-?\d+\.\d+", line)
             if sig:
