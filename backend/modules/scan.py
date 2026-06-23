@@ -83,9 +83,11 @@ def _parse_iw_scan(text):
             current["wps"] = True
         elif "SAE" in line:
             current["encryption"] = "WPA3"
-        elif "MFPR" in line or "Management frame protection required" in line:
+        elif ("MFPR" in line
+              or "MFP-required" in line
+              or "Management frame protection required" in line):
             current["pmf"] = "required"
-        elif "MFPC" in line:
+        elif "MFPC" in line or "MFP-capable" in line:
             current["pmf"] = "capable"
     if current:
         nets.append(current)
