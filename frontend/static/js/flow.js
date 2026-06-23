@@ -9,6 +9,7 @@
 const socket = io();
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => r.querySelectorAll(s);
+const initialParams = new URLSearchParams(window.location.search);
 
 // ---- connection status ----------------------------------------------------
 socket.on("connect", () => {
@@ -482,7 +483,7 @@ async function runPipeline() {
 
   ctx.iface = $("#cfg-iface").value || "wlan0";
   ctx.bssid = $("#cfg-bssid").value.trim();
-  ctx.channel = 6;
+  ctx.channel = parseInt(initialParams.get("channel") || "6", 10) || 6;
   ctx.networks = [];
   ctx.report = null;
 
@@ -607,11 +608,26 @@ async function loadInterfaces() {
         sel.appendChild(o);
       });
     }
+    const iface = initialParams.get("iface");
+    if (iface) {
+      if (![...sel.options].some(o => o.value === iface)) {
+        const o = document.createElement("option");
+        o.value = iface; o.textContent = iface;
+        sel.appendChild(o);
+      }
+      sel.value = iface;
+    }
   } catch (e) { /* keep default */ }
+}
+
+function applyInitialTarget() {
+  const bssid = initialParams.get("bssid");
+  if (bssid) $("#cfg-bssid").value = bssid;
 }
 
 // ---- wire up --------------------------------------------------------------
 buildPipeline();
+applyInitialTarget();
 loadInterfaces();
 $("#run-btn").addEventListener("click", runPipeline);
 $("#reset-btn").addEventListener("click", () => resetUI(true));

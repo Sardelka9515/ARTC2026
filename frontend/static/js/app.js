@@ -82,9 +82,12 @@ function renderScan(nets) {
       </td>
     </tr>`).join("");
   $$(".use-btn").forEach(b => b.addEventListener("click", () => {
-    $("#audit-bssid").value = b.dataset.bssid;
-    $("#atk-bssid").value = b.dataset.bssid;
-    if (b.dataset.ch && b.dataset.ch !== "null") $("#atk-channel").value = b.dataset.ch;
+    const params = new URLSearchParams({
+      bssid: b.dataset.bssid,
+      iface: $("#scan-iface").value,
+    });
+    if (b.dataset.ch && b.dataset.ch !== "null") params.set("channel", b.dataset.ch);
+    window.location.href = `/flow?${params.toString()}`;
   }));
 }
 function encChip(e) {
