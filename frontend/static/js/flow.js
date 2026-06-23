@@ -216,10 +216,11 @@ function summarizeChecks(report, names, label) {
 
   const fails = checks.filter(c => c.status === "FAIL");
   const warns = checks.filter(c => c.status === "WARN");
-  const manual = checks.filter(c => c.status === "MANUAL" || c.status === "INFO");
+  const manual = checks.filter(c => c.status === "MANUAL");
+  const info = checks.filter(c => c.status === "INFO");
 
   if (fails.length || warns.length) {
-    const rows = [...fails, ...warns, ...manual].map(detRow).join("");
+    const rows = [...fails, ...warns, ...manual, ...info].map(detRow).join("");
     return {
       ok: true, warn: true,
       summary: `${fails.length} 不合規 · ${warns.length} 警告`,
@@ -235,7 +236,9 @@ function summarizeChecks(report, names, label) {
       errBody: manual.map(detRow).join(""),
     };
   }
-  return { ok: true, summary: `${checks.length} 項全數通過` };
+  const passed = checks.filter(c => c.status === "PASS");
+  const infoText = info.length ? ` · ${info.length} 資訊` : "";
+  return { ok: true, summary: `${passed.length} 項通過${infoText}` };
 }
 
 // Launch one attack scenario as a job and resolve when it ends.
