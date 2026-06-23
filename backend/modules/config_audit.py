@@ -61,8 +61,9 @@ def audit_target(iface, bssid):
 
     # 4. SSID broadcast
     hidden = target.get("ssid", "") in ("", "<hidden>")
-    add("SSID broadcast policy", "INFO",
-        "SSID is hidden/not broadcast; informational only, not a warning."
+    add("SSID broadcast policy",
+        "PASS" if hidden else "INFO",
+        "SSID is hidden/not broadcast."
         if hidden else f"SSID is broadcast as: {target['ssid']}")
 
     # 5. Client isolation — needs active probing

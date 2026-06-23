@@ -38,9 +38,9 @@ const STAGES = [
     id: "config", mode: "ap", sub: "a",
     title: "安全組態檢測", en: "Security Configuration Audit",
     items: [
-      "禁用不安全連線（WPS）杜絕暴力破解",
-      "導入高安全性驗證（WPA3 / 802.1X）",
-      "隱藏或管控 SSID 廣播",
+      { key: "wps", label: "禁用不安全連線（WPS）杜絕暴力破解" },
+      { key: "auth", label: "導入高安全性驗證（WPA3 / 802.1X）" },
+      { key: "ssid", label: "隱藏或管控 SSID 廣播" },
     ],
     run: runConfigAudit,
   },
@@ -48,8 +48,8 @@ const STAGES = [
     id: "advanced", mode: "ap", sub: "b",
     title: "進階防護技術檢測", en: "Advanced Protection",
     items: [
-      "管理訊框保護（PMF / 802.11w）防偽造斷線",
-      "網段安全隔離（Client Isolation）防橫向移動",
+      { key: "pmf", label: "管理訊框保護（PMF / 802.11w）防偽造斷線" },
+      { key: "isolation", label: "網段安全隔離（Client Isolation）防橫向移動" },
     ],
     run: runAdvancedProtection,
   },
@@ -57,8 +57,8 @@ const STAGES = [
     id: "wids", mode: "client", sub: "a",
     title: "主動防禦與異常偵測", en: "Active Defense · WIDS",
     items: [
-      "辨識大量重傳 / 非法握手（DoS·破解嘗試）",
-      "偵測惡意熱點 / 釣魚熱點，防止誤連",
+      { key: "handshake", label: "辨識大量重傳 / 非法握手（DoS·破解嘗試）" },
+      { key: "rogue", label: "偵測惡意熱點 / 釣魚熱點，防止誤連" },
     ],
     run: runWids,
   },
@@ -66,9 +66,9 @@ const STAGES = [
     id: "attacksim", mode: "client", sub: "b",
     title: "攻擊模擬與驗證", en: "Attack Simulation & Validation",
     items: [
-      "模擬 Deauth 解除認證攻擊",
-      "架設釣魚熱點（Rogue AP / Evil Twin）",
-      "完整事件日誌（Log）儲存與紀錄",
+      { key: "deauth", label: "模擬 Deauth 解除認證攻擊" },
+      { key: "rogue_ap", label: "架設釣魚熱點（Rogue AP / Evil Twin）" },
+      { key: "log", label: "完整事件日誌（Log）儲存與紀錄" },
     ],
     run: runAttackSim,
   },
@@ -85,7 +85,13 @@ function cardHTML(st) {
       <span class="num">${st.sub}</span>
       <h3>${st.title}</h3>
       <p class="desc">${st.en}</p>
-      <ul class="items">${st.items.map(i => `<li>${i}</li>`).join("")}</ul>
+      <ul class="items">${st.items.map(i => `
+        <li data-check-key="${i.key}" data-status="pending">
+          <div class="item-main">
+            <span class="item-text">${i.label}<span class="item-detail"></span></span>
+            <span class="mini-chip info">待測</span>
+          </div>
+        </li>`).join("")}</ul>
       <div class="badge"><span class="spin"></span><span class="btxt">待測</span></div>
       <div class="result"></div>
     </div>
@@ -143,9 +149,32 @@ function setState(id, state, badgeText) {
 }
 function setResult(id, text) { $(`#card-${id} .result`).textContent = text || ""; }
 
+function setCheckState(stageId, key, status, detail = "") {
+  const item = $(`#card-${stageId} [data-check-key="${key}"]`);
+  if (!item) return;
+  const normalized = String(status || "info").toLowerCase();
+  const chipClass = normalized === "pass" ? "ok"
+    : normalized === "fail" ? "fail"
+      : normalized === "warn" || normalized === "manual" ? "warn"
+        : "info";
+  item.dataset.status = normalized;
+  $(".mini-chip", item).className = `mini-chip ${chipClass}`;
+  $(".mini-chip", item).textContent = status || "INFO";
+  $(".item-detail", item).textContent = detail || "";
+}
+
+function resetCheckStates(id, status = "pending", label = "待測") {
+  $$(`#card-${id} [data-check-key]`).forEach(item => {
+    item.dataset.status = status;
+    $(".mini-chip", item).className = "mini-chip info";
+    $(".mini-chip", item).textContent = label;
+    $(".item-detail", item).textContent = "";
+  });
+}
+
 function showError(id, title, body, variant = "fail") {
   const p = $(`#err-${id}`);
-  p.className = `err-panel show ${variant === "warn" ? "warn" : ""}`;
+  p.className = `err-panel show ${variant === "warn" ? "warn" : variant === "info" ? "info" : ""}`;
   p.innerHTML = `<div class="err-title">${escapeHtml(title)}</div>${body}`;
 }
 function clearError(id) {
@@ -201,6 +230,14 @@ function log(message, level = "log") {
 // Map an audit status to a log level / chip class.
 const lvlFor = (s) => ({ FAIL: "fail", WARN: "warn", PASS: "ok" }[s] || "info");
 const chipFor = (s) => ({ FAIL: "fail", WARN: "warn", PASS: "ok" }[s] || "info");
+const statusForItem = (s) => ({ FAIL: "fail", WARN: "warn", PASS: "pass", MANUAL: "manual" }[s] || "info");
+const CHECK_KEYS = {
+  "WPS disabled": "wps",
+  "Strong auth (WPA3 / 802.1X)": "auth",
+  "SSID broadcast policy": "ssid",
+  "PMF (802.11w)": "pmf",
+  "Client isolation": "isolation",
+};
 
 function detRow(c) {
   return `<div class="det">
@@ -210,17 +247,20 @@ function detRow(c) {
 }
 
 // Summarise a subset of audit checks into a stage result.
-function summarizeChecks(report, names, label) {
+function summarizeChecks(report, names, label, stageId) {
   const checks = (report.checks || []).filter(c => names.includes(c.name));
-  checks.forEach(c => log(`  [${c.status}] ${c.name} — ${c.detail}`, lvlFor(c.status)));
+  checks.forEach(c => {
+    log(`  [${c.status}] ${c.name} — ${c.detail}`, lvlFor(c.status));
+    if (stageId) setCheckState(stageId, CHECK_KEYS[c.name], statusForItem(c.status), c.detail);
+  });
 
   const fails = checks.filter(c => c.status === "FAIL");
   const warns = checks.filter(c => c.status === "WARN");
   const manual = checks.filter(c => c.status === "MANUAL");
   const info = checks.filter(c => c.status === "INFO");
+  const rows = checks.map(detRow).join("");
 
   if (fails.length || warns.length) {
-    const rows = [...fails, ...warns, ...manual, ...info].map(detRow).join("");
     return {
       ok: true, warn: true,
       summary: `${fails.length} 不合規 · ${warns.length} 警告`,
@@ -233,12 +273,17 @@ function summarizeChecks(report, names, label) {
       ok: true, warn: true,
       summary: `需人工驗證`,
       errTitle: `${label}：需人工驗證`,
-      errBody: manual.map(detRow).join(""),
+      errBody: rows,
     };
   }
   const passed = checks.filter(c => c.status === "PASS");
   const infoText = info.length ? ` · ${info.length} 資訊` : "";
-  return { ok: true, summary: `${passed.length} 項通過${infoText}` };
+  return {
+    ok: true,
+    summary: `${passed.length} 項通過${infoText}`,
+    errTitle: `${label}：檢測明細`,
+    errBody: rows,
+  };
 }
 
 // Launch one attack scenario as a job and resolve when it ends.
@@ -309,7 +354,8 @@ async function runConfigAudit() {
   return summarizeChecks(
     a.report,
     ["WPS disabled", "Strong auth (WPA3 / 802.1X)", "SSID broadcast policy"],
-    "安全組態");
+    "安全組態",
+    "config");
 }
 
 // AP 模式 · b. 進階防護技術檢測 — PMF/802.11w + Client Isolation (+ 主動 PMF 探測)
@@ -326,7 +372,7 @@ async function runAdvancedProtection() {
     const a = await postJSON("/api/audit", { bssid: ctx.bssid, interface: ctx.iface });
     rep = a.ok ? a.report : { checks: [] };
   }
-  return summarizeChecks(rep, ["PMF (802.11w)", "Client isolation"], "進階防護");
+  return summarizeChecks(rep, ["PMF (802.11w)", "Client isolation"], "進階防護", "advanced");
 }
 
 // Client/Station 模式 · a. 主動防禦與異常偵測 (WIDS)
@@ -354,16 +400,30 @@ function runWids() {
       await postJSON("/api/wids/stop", {});
       log(`WIDS 停止。共 ${events} 事件，重傳/握手 ${retrans}，惡意熱點 ${rogue}，高危 ${high}。`,
         high ? "warn" : "ok");
+      setCheckState("wids", "handshake", retrans ? "warn" : "pass",
+        retrans ? `偵測到 ${retrans} 項重傳/握手異常。` : "未偵測到重傳或非法握手異常。");
+      setCheckState("wids", "rogue", rogue ? "fail" : "pass",
+        rogue ? `偵測到 ${rogue} 項惡意/釣魚熱點事件。` : "未偵測到惡意或釣魚熱點事件。");
+      const rows = [
+        { name: "重傳 / 非法握手", status: retrans ? "WARN" : "PASS",
+          detail: retrans ? `偵測到 ${retrans} 項事件。` : "未偵測到異常。" },
+        { name: "惡意熱點 / 釣魚熱點", status: rogue ? "FAIL" : "PASS",
+          detail: rogue ? `偵測到 ${rogue} 項事件。` : "未偵測到異常。" },
+      ].map(detRow).join("");
       if (high) {
         resolve({
           ok: true, warn: true,
           summary: `${events} 事件 · ${high} 高危`,
           errTitle: `偵測到 ${high} 項高危入侵事件`,
-          errBody: `<pre>於 ${WINDOW_MS / 1000}s 監聽視窗內偵測到 ${high} 項高危事件` +
-            `（重傳/非法握手 ${retrans}，惡意/釣魚熱點 ${rogue}）。詳見下方日誌。</pre>`,
+          errBody: rows,
         });
       } else {
-        resolve({ ok: true, summary: `${events} 事件 · 無高危` });
+        resolve({
+          ok: true,
+          summary: `${events} 事件 · 無高危`,
+          errTitle: "主動防禦：檢測明細",
+          errBody: rows,
+        });
       }
     }, WINDOW_MS);
   });
@@ -375,21 +435,40 @@ async function runAttackSim() {
 
   log("① 模擬 Deauth 解除認證攻擊 …", "info");
   const d1 = await runScenarioJob("deauth", { count: "50" });
+  setCheckState("attacksim", "deauth", d1.ok ? "pass" : "fail",
+    d1.ok ? `腳本完成，輸出 ${d1.lines} 行。` : `腳本狀態：${d1.status}`);
 
   log("② 架設釣魚熱點（Rogue AP / Evil Twin）…", "info");
   const d2 = await runScenarioJob("rogue_ap", { config_path: "configs/eviltwin.conf" });
+  setCheckState("attacksim", "rogue_ap", d2.ok ? "pass" : "fail",
+    d2.ok ? `腳本完成，輸出 ${d2.lines} 行。` : `腳本狀態：${d2.status}`);
 
   const totalLines = d1.lines + d2.lines;
   log("③ 所有異常連線事件已寫入稽核日誌（logs/testing.jsonl）。", "ok");
+  setCheckState("attacksim", "log", "pass", "事件已寫入 logs/testing.jsonl。");
+
+  const rows = [
+    { name: "Deauth 攻擊模擬", status: d1.ok ? "PASS" : "FAIL",
+      detail: d1.ok ? `完成，輸出 ${d1.lines} 行。` : `未完成，狀態 ${d1.status}。` },
+    { name: "Rogue AP / Evil Twin", status: d2.ok ? "PASS" : "FAIL",
+      detail: d2.ok ? `完成，輸出 ${d2.lines} 行。` : `未完成，狀態 ${d2.status}。` },
+    { name: "事件日誌", status: "PASS", detail: "已記錄至 logs/testing.jsonl。" },
+  ].map(detRow).join("");
 
   if (!d1.ok && !d2.ok) {
     return {
       ok: false, summary: "攻擊腳本失敗",
-      errBody: `<pre>Deauth 與 Rogue AP 腳本皆未正常結束，請檢查工具環境。</pre>`,
+      errBody: rows,
     };
   }
   const note = (!d1.ok || !d2.ok) ? " · 部分腳本未完成" : "";
-  return { ok: true, summary: `Deauth + Rogue AP · ${totalLines} 行輸出${note}` };
+  return {
+    ok: true,
+    warn: !d1.ok || !d2.ok,
+    summary: `Deauth + Rogue AP · ${totalLines} 行輸出${note}`,
+    errTitle: "攻擊模擬：檢測明細",
+    errBody: rows,
+  };
 }
 
 // ===========================================================================
@@ -414,13 +493,26 @@ async function runPipeline() {
   log("════ 檢測流程開始 ════", "info");
 
   let failed = false;
+  const includeClientMode = $("#cfg-client-mode").checked;
+  const activeStages = STAGES.filter(st => includeClientMode || st.mode !== "client");
 
-  for (let i = 0; i < STAGES.length; i++) {
-    const st = STAGES[i];
+  if (!includeClientMode) {
+    STAGES.filter(st => st.mode === "client").forEach(st => {
+      setState(st.id, "skipped", "略過");
+      setResult(st.id, "未執行 Client / Station 模式");
+      resetCheckStates(st.id, "skipped", "略過");
+    });
+    log("已略過 Client / Station 模式檢測。", "info");
+  }
+
+  for (let i = 0; i < activeStages.length; i++) {
+    const st = activeStages[i];
+    const stageIdx = STAGES.indexOf(st);
     setState(st.id, "running", "檢測中");
-    setProgress((i / STAGES.length) * 100);
-    if (i > 0) setConnector(i - 1, "done");
-    setConnector(i, "flowing");
+    resetCheckStates(st.id, "pending", "待測");
+    setProgress((i / activeStages.length) * 100);
+    if (i > 0) setConnector(STAGES.indexOf(activeStages[i - 1]), "done");
+    if (i < activeStages.length - 1) setConnector(stageIdx, "flowing");
 
     let res;
     try {
@@ -435,14 +527,16 @@ async function runPipeline() {
         showError(st.id, res.errTitle || "檢測發現", res.errBody || "", "warn");
       } else {
         setState(st.id, "passed", "通過");
+        if (res.errBody) showError(st.id, res.errTitle || "檢測明細", res.errBody, "info");
       }
       setResult(st.id, res.summary || "");
+      if (i < activeStages.length - 1) setConnector(stageIdx, "done");
     } else {
       setState(st.id, "failed", "失敗");
       setResult(st.id, res.summary || "失敗");
       showError(st.id, res.errTitle || "此階段失敗", res.errBody || "<pre>unknown error</pre>");
       log(`階段「${st.title}」失敗 — 中止流程。`, "fail");
-      setConnector(i, null);
+      setConnector(stageIdx, null);
       failed = true;
       break;
     }
@@ -453,7 +547,6 @@ async function runPipeline() {
     setDockStat("中止", "failed");
     log("════ 檢測流程中止 ════", "fail");
   } else {
-    setConnector(STAGES.length - 2, "done");
     setProgress(100, "done");
     setDockStat("完成", "done");
     log("════ 檢測流程完成 ════", "ok");
@@ -469,6 +562,7 @@ function resetUI(full = true) {
   STAGES.forEach((st, i) => {
     setState(st.id, "pending", "待測");
     setResult(st.id, "");
+    resetCheckStates(st.id, "pending", "待測");
     clearError(st.id);
     if (i < STAGES.length - 1) setConnector(i, null);
   });

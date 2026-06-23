@@ -18,6 +18,20 @@
 }
 .run-config { display: flex; gap: 14px; flex-wrap: wrap; }
 .run-config label small { color: var(--muted); font-weight: 400; }
+.run-config .check-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding-top: 18px;
+}
+.check-option input {
+  width: 16px;
+  min-width: 0;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.check-option span { color: var(--text); font-size: 13px; }
 .run-actions { display: flex; gap: 10px; }
 button.big { padding: 11px 22px; font-size: 14px; font-weight: 600; }
 button.ghost {
@@ -131,7 +145,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .card .items li {
   position: relative;
-  padding: 4px 0 4px 16px;
+  padding: 6px 0 6px 16px;
   font-size: 11px;
   line-height: 1.35;
   color: var(--muted);
@@ -141,9 +155,41 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   position: absolute; left: 3px; top: 3px;
   color: var(--accent); font-weight: 700;
 }
-.card[data-state="passed"] .items li::before { color: var(--ok); }
-.card[data-state="warn"]   .items li::before { color: var(--warn); }
-.card[data-state="failed"] .items li::before { color: var(--fail); }
+.card .items li[data-status="pass"]::before { color: var(--ok); }
+.card .items li[data-status="warn"]::before { color: var(--warn); }
+.card .items li[data-status="fail"]::before { color: var(--fail); }
+.card .items li[data-status="info"]::before { color: var(--info); }
+.card .items li[data-status="manual"]::before { color: var(--warn); }
+.card .items li[data-status="skipped"]::before { color: var(--muted); }
+.item-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.item-text { flex: 1; min-width: 0; }
+.item-detail {
+  display: block;
+  margin-top: 2px;
+  color: #8b949e;
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+.mini-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  background: var(--panel-2);
+  text-transform: uppercase;
+}
+.mini-chip.ok { color: var(--ok); border-color: var(--ok); }
+.mini-chip.warn { color: var(--warn); border-color: var(--warn); }
+.mini-chip.fail { color: var(--fail); border-color: var(--fail); }
+.mini-chip.info { color: var(--info); border-color: var(--info); }
 .card h3 { margin: 20px 0 4px; font-size: 15px; }
 .card .desc { margin: 0; font-size: 11.5px; color: var(--muted); min-height: 30px; }
 
@@ -224,6 +270,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .card[data-state="failed"] .badge {
   background: #2a0f12; color: var(--fail); border-color: var(--fail);
 }
+.card[data-state="skipped"] {
+  opacity: .58;
+  border-color: var(--border);
+}
+.card[data-state="skipped"] .badge {
+  background: var(--panel-2); color: var(--muted); border-color: var(--border);
+}
 
 @keyframes pop-in { 0% { transform: scale(.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
 @keyframes shake {
@@ -288,6 +341,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .err-panel.warn pre { color: #e6d29a; }
 .err-panel.warn .det { border-color: #3a3018; }
 .err-panel.warn .det .dn { color: #e6d8b0; }
+.err-panel.info { border-color: var(--border); background: #101820; }
+.err-panel.info::before { background: #101820; border-color: var(--border); }
+.err-panel.info .err-title { color: var(--info); }
+.err-panel.info pre { color: #b8d7f0; }
+.err-panel.info .det { border-color: #24303b; }
+.err-panel.info .det .dn { color: #c9d1d9; }
 
 /* ---- dock: progress + logs ------------------------------------------------ */
 .dock {
