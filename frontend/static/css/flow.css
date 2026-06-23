@@ -144,13 +144,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .card[data-state="passed"] .items li::before { color: var(--ok); }
 .card[data-state="warn"]   .items li::before { color: var(--warn); }
 .card[data-state="failed"] .items li::before { color: var(--fail); }
-.card .stage-icon {
-  font-size: 30px;
-  line-height: 1;
-  margin: 6px 0 10px;
-  display: inline-block;
-}
-.card h3 { margin: 0 0 4px; font-size: 15px; }
+.card h3 { margin: 20px 0 4px; font-size: 15px; }
 .card .desc { margin: 0; font-size: 11.5px; color: var(--muted); min-height: 30px; }
 
 /* status badge inside card */
@@ -192,12 +186,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   background: #0f1f2e; color: var(--info); border-color: var(--accent);
 }
 .card[data-state="running"] .badge .spin { display: inline-block; }
-.card[data-state="running"] .stage-icon { animation: bob 1.4s ease-in-out infinite; }
 @keyframes card-pulse {
   0%,100% { box-shadow: 0 0 0 1px var(--accent), 0 0 22px -8px var(--accent); }
   50%     { box-shadow: 0 0 0 1px var(--accent), 0 0 30px -2px var(--accent); }
 }
-@keyframes bob { 50% { transform: translateY(-4px); } }
 
 /* sweeping shimmer while running */
 .card[data-state="running"]::before {
@@ -217,7 +209,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .card[data-state="passed"] .badge {
   background: #0d2818; color: var(--ok); border-color: var(--ok);
 }
-.card[data-state="passed"] .stage-icon { color: var(--ok); }
 
 /* state: warn (ran, but findings) */
 .card[data-state="warn"] { border-color: var(--warn); opacity: 1; }
@@ -233,7 +224,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .card[data-state="failed"] .badge {
   background: #2a0f12; color: var(--fail); border-color: var(--fail);
 }
-.card[data-state="failed"] .stage-icon { color: var(--fail); }
 
 @keyframes pop-in { 0% { transform: scale(.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
 @keyframes shake {

@@ -35,7 +35,7 @@ const MODES = {
 // ---- stage definitions (the a./b. sub-items under each mode) ---------------
 const STAGES = [
   {
-    id: "config", mode: "ap", sub: "a", icon: "🔐",
+    id: "config", mode: "ap", sub: "a",
     title: "安全組態檢測", en: "Security Configuration Audit",
     items: [
       "禁用不安全連線（WPS）杜絕暴力破解",
@@ -45,7 +45,7 @@ const STAGES = [
     run: runConfigAudit,
   },
   {
-    id: "advanced", mode: "ap", sub: "b", icon: "🛡️",
+    id: "advanced", mode: "ap", sub: "b",
     title: "進階防護技術檢測", en: "Advanced Protection",
     items: [
       "管理訊框保護（PMF / 802.11w）防偽造斷線",
@@ -54,7 +54,7 @@ const STAGES = [
     run: runAdvancedProtection,
   },
   {
-    id: "wids", mode: "client", sub: "a", icon: "📡",
+    id: "wids", mode: "client", sub: "a",
     title: "主動防禦與異常偵測", en: "Active Defense · WIDS",
     items: [
       "辨識大量重傳 / 非法握手（DoS·破解嘗試）",
@@ -63,7 +63,7 @@ const STAGES = [
     run: runWids,
   },
   {
-    id: "attacksim", mode: "client", sub: "b", icon: "⚔️",
+    id: "attacksim", mode: "client", sub: "b",
     title: "攻擊模擬與驗證", en: "Attack Simulation & Validation",
     items: [
       "模擬 Deauth 解除認證攻擊",
@@ -83,7 +83,6 @@ function cardHTML(st) {
   return `
     <div class="card" id="card-${st.id}" data-state="pending">
       <span class="num">${st.sub}</span>
-      <span class="stage-icon">${st.icon}</span>
       <h3>${st.title}</h3>
       <p class="desc">${st.en}</p>
       <ul class="items">${st.items.map(i => `<li>${i}</li>`).join("")}</ul>
@@ -147,8 +146,7 @@ function setResult(id, text) { $(`#card-${id} .result`).textContent = text || ""
 function showError(id, title, body, variant = "fail") {
   const p = $(`#err-${id}`);
   p.className = `err-panel show ${variant === "warn" ? "warn" : ""}`;
-  const icon = variant === "warn" ? "⚠" : "✕";
-  p.innerHTML = `<div class="err-title">${icon} ${escapeHtml(title)}</div>${body}`;
+  p.innerHTML = `<div class="err-title">${escapeHtml(title)}</div>${body}`;
 }
 function clearError(id) {
   const p = $(`#err-${id}`);
@@ -430,7 +428,7 @@ async function runPipeline() {
 
     if (res.ok) {
       if (res.warn) {
-        setState(st.id, "warn", "完成 ⚠");
+        setState(st.id, "warn", "注意");
         showError(st.id, res.errTitle || "檢測發現", res.errBody || "", "warn");
       } else {
         setState(st.id, "passed", "通過");
