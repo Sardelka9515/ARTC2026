@@ -47,11 +47,33 @@ def scan_networks(iface="wlan0", duration=10):
 def _parse_iw_scan(text):
     nets = []
     current = None
+
+    def finish_current():
+        if not current:
+            return
+        auth = current.pop("_auth_suites", set())
+        has_rsn = current.pop("_has_rsn", False)
+        has_wpa = current.pop("_has_wpa", False)
+
+        if "SAE" in auth and ("PSK" in auth or "802.1X" in auth):
+            current["encryption"] = "WPA3-Transition"
+        elif "SAE" in auth or "OWE" in auth:
+            current["encryption"] = "WPA3"
+        elif any(a.startswith("802.1X") for a in auth):
+            current["encryption"] = "WPA2-Enterprise"
+        elif "PSK" in auth:
+            current["encryption"] = "WPA2"
+        elif has_rsn:
+            current["encryption"] = "WPA2/WPA3"
+        elif has_wpa:
+            current["encryption"] = "WPA"
+
     for line in text.splitlines():
         line = line.rstrip()
         m = re.match(r"BSS ([0-9a-f:]{17})", line)
         if m:
             if current:
+                finish_current()
                 nets.append(current)
             current = {
                 "bssid": m.group(1),
@@ -61,6 +83,9 @@ def _parse_iw_scan(text):
                 "encryption": "OPEN",
                 "wps": False,
                 "pmf": "unknown",
+                "_has_rsn": False,
+                "_has_wpa": False,
+                "_auth_suites": set(),
             }
             continue
         if not current:
@@ -76,13 +101,21 @@ def _parse_iw_scan(text):
             if ch:
                 current["channel"] = int(ch.group(1))
         elif "RSN:" in line:
-            current["encryption"] = "WPA2/WPA3"
+            current["_has_rsn"] = True
         elif "WPA:" in line and current["encryption"] == "OPEN":
-            current["encryption"] = "WPA"
+            current["_has_wpa"] = True
         elif "WPS:" in line:
             current["wps"] = True
-        elif "SAE" in line:
-            current["encryption"] = "WPA3"
+        elif "Authentication suites:" in line:
+            suites = line.split("Authentication suites:", 1)[1]
+            for suite in ("SAE", "OWE", "PSK", "802.1X", "802.1X/SHA-256",
+                          "802.1X/SHA-384"):
+                if suite in suites:
+                    current["_auth_suites"].add(suite)
+            if "FT/SAE" in suites:
+                current["_auth_suites"].add("SAE")
+            if "FT/PSK" in suites:
+                current["_auth_suites"].add("PSK")
         elif ("MFPR" in line
               or "MFP-required" in line
               or "Management frame protection required" in line):
@@ -90,6 +123,7 @@ def _parse_iw_scan(text):
         elif "MFPC" in line or "MFP-capable" in line:
             current["pmf"] = "capable"
     if current:
+        finish_current()
         nets.append(current)
     return nets
 

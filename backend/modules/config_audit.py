@@ -38,6 +38,11 @@ def audit_target(iface, bssid):
     enc = target.get("encryption", "OPEN")
     if enc == "WPA3":
         add("Strong auth (WPA3 / 802.1X)", "PASS", "WPA3-SAE in use.")
+    elif enc == "WPA2-Enterprise":
+        add("Strong auth (WPA3 / 802.1X)", "PASS", "802.1X authentication in use.")
+    elif enc == "WPA3-Transition":
+        add("Strong auth (WPA3 / 802.1X)", "WARN",
+            "WPA3 transition mode detected; WPA2 clients may still connect.")
     elif enc in ("OPEN", "WPA"):
         add("Strong auth (WPA3 / 802.1X)", "FAIL",
             f"Weak/none encryption: {enc}")

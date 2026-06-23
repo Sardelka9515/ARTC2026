@@ -88,7 +88,7 @@ function renderScan(nets) {
   }));
 }
 function encChip(e) {
-  if (e === "WPA3") return "ok";
+  if (e === "WPA3" || e === "WPA2-Enterprise") return "ok";
   if (e === "OPEN" || e === "WPA") return "fail";
   return "warn";
 }
