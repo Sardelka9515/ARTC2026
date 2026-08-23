@@ -1,0 +1,214 @@
+\documentclass[12pt,a4paper,oneside]{report}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setmainfont{Times New Roman}
+\setCJKmainfont{PingFang TC}
+\setCJKmonofont{PingFang TC}
+\usepackage[margin=2.8cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue,hypertexnames=false}
+\usepackage{indentfirst}
+
+\title{基於 UN R155 規範之車載 Wi-Fi 資安測試框架與威脅建模研究}
+\author{%
+  研究單位：財團法人車輛研究測試中心\\
+  計畫主持人：許富皓 教授\\[0.5em]
+  撰寫人：丁時揚、陳玨嶧、李宥寬\\
+  執行機構：國立中央大學資訊工程學系
+}
+\date{執行期間：中華民國 115 年 01 月 01 日至 115 年 11 月 30 日}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+\begin{document}
+
+\maketitle
+\pagenumbering{roman}
+
+\chapter*{摘要}
+隨著車載資訊系統與無線連線功能普及，車輛 Wi-Fi 介面可能成為攻擊者進入車內網路或干擾車載服務的入口。本研究針對車聯網測試場域，設計並實作一套以 Web 為操作介面的 Wi-Fi 資安測試平台，整合無線網路掃描、安全組態稽核、授權攻擊情境、無線入侵偵測（Wireless Intrusion Detection System, WIDS）及可追溯的測試紀錄。
+
+本平台採用 Flask 與 Socket.IO 建立前後端架構，後端負責串接無線掃描、測試工具與封包監控元件，並在缺少實體測試工具時提供模擬輸出，以支援開發與展示。系統可針對 WPS、WPA3／802.1X、PMF（802.11w）、SSID 廣播及用戶端隔離等項目進行初步稽核，並以 deauthentication、Rogue AP、WPS 測試、握手封包擷取與 PMF probe 等情境評估防護能力。
+
+目前成果以功能原型與流程驗證為主，實體 T-BOX 測試、量化效能數據及真實工具輸出仍需於授權實驗環境中補充。
+
+\noindent\textbf{關鍵詞：}車聯網、Wi-Fi 資安、WIDS、滲透測試、UN R155、ISO/SAE 21434
+
+\chapter*{Abstract}
+\noindent\textit{To be translated after the research scope and experimental results are finalized.}
+
+\tableofcontents
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{緒論}
+\section{研究背景與動機}
+車聯網、T-BOX 與車內 Wi-Fi 逐漸成為車輛服務的重要連線介面。無線介面的便利性同時擴大了未授權存取、管理框架干擾、弱認證與 Rogue AP 等攻擊面。UN R155 與 ISO/SAE 21434 亦要求製造商建立資安風險管理、驗證測試與證據追溯流程。
+
+現有 Wi-Fi 資安測試往往依賴多個命令列工具，測試人員需要人工切換掃描、稽核、攻擊與監控流程，結果也容易分散在不同終端機輸出中。因此，本研究將常用測試功能整合至單一 Web 流程，降低操作差異並改善結果留存。
+
+\section{問題陳述}
+車載 Wi-Fi 測試面臨測試流程分散、攻擊情境難以重複、偵測結果缺少一致格式，以及合規證據不易追溯等問題。本研究聚焦於如何以威脅模型連結 UN R155 要求、Wi-Fi 測試情境與 WIDS 偵測結果。
+
+\section{研究目的與貢獻}
+\begin{enumerate}
+  \item 建立符合車載 Wi-Fi 測試需求的自動化測試框架。
+  \item 建立涵蓋被動掃描、組態檢測、主動攻擊模擬與 WIDS 的整合流程。
+  \item 將測試情境與 UN R155／ISO/SAE 21434 的資安驗證需求建立對照關係。
+  \item 建立具時間戳、分類與 JSONL 格式的測試稽核軌跡，支援後續合規證據整理。
+\end{enumerate}
+
+\section{論文架構}
+本論文共分為七章。第一章說明研究背景、問題與貢獻；第二章回顧車聯網資安標準與相關研究；第三章提出威脅模型與平台架構；第四章說明研究方法與核心實作；第五章呈現實驗設計與成效評估；第六章討論合規貢獻與限制；第七章總結研究成果並提出未來工作。
+
+\section*{研究範圍與限制}
+本研究對象為 ARTC T-BOX 測試台、實驗室 AP 與明確授權的無線目標，聚焦 Wi-Fi 層及其與車載測試流程的介面，不涵蓋完整車內 CAN 或車載乙太網路漏洞分析。現階段部分模組在缺少 Kali／Parrot 工具或監聽模式硬體時採用模擬資料，論文實驗章將分開呈現模擬結果與實體結果。所有攻擊情境僅能在書面授權的隔離環境執行。
+
+\chapter{文獻探討與相關研究}
+\section{車聯網與 T-Box 資安架構}
+介紹車載終端、T-Box、AP、測試主機與車內網路的關係，並界定本研究的測試邊界。
+
+\section{車輛網路安全法規與標準}
+整理 UN R155、ISO/SAE 21434 與 IEEE 802.11 相關安全機制，說明資安風險管理、測試驗證與證據保存的關聯。
+
+\section{無線網路攻擊手法分析}
+說明 WPA2、WPA3-SAE、802.1X、WPS、PMF／IEEE 802.11w、SSID 廣播與用戶端隔離的安全意義，並分析 deauthentication、握手擷取、WPS 測試、Rogue AP／Evil Twin 及 PMF 行為探測。
+
+\section{現有車載資安測試與防護技術之探討與侷限}
+本研究涵蓋 deauthentication、握手擷取、WPS 測試、Rogue AP／Evil Twin 及 PMF 行為探測。論文描述測試目的與觀測指標，不提供未授權使用指南。
+
+\chapter{威脅建模與系統架構}
+\section{測試目標與環境定義}
+本研究測試目標為 ARTC T-BOX 與其車載 Wi-Fi 服務，測試環境由測試主機、無線介面、受測 AP／T-Box、隔離網路與紀錄系統構成。測試活動限於具備書面授權的設備與網段。
+
+\section{威脅模型}
+依照資產、信任邊界、攻擊者能力與攻擊面建立威脅模型。資產包含 Wi-Fi 認證資訊、車載服務可用性、管理框架完整性與測試證據；攻擊者模型區分鄰近無線攻擊者與可接近測試網路的攻擊者，並將被動偵察、組態弱點、管理框架干擾及 Rogue AP 納入分析。
+
+\section{測試平台與 WIDS 系統架構設計}
+系統由瀏覽器、Flask 後端、掃描模組、安全稽核模組、攻擊工作管理器、WIDS 監控器與 JSONL 紀錄器組成。瀏覽器透過 REST API 發出控制請求，再透過 Socket.IO 接收工作狀態、即時輸出與 WIDS 事件。
+
+\section{功能需求與測試流程}
+\begin{longtable}{p{0.12\textwidth}p{0.55\textwidth}p{0.22\textwidth}}
+\caption{系統功能需求與對應實作}\label{tab:function-requirements}\\
+\toprule
+編號 & 功能需求 & 對應實作 \\
+\midrule
+F-01 & 列出可用無線介面 & \texttt{modules/scan.py} \\
+F-02 & 掃描 BSSID、SSID、頻道、訊號與加密 & \texttt{scan\_networks()} \\
+F-03 & 稽核 WPS、強認證、PMF、SSID 與用戶端隔離 & \texttt{config\_audit.py} \\
+F-04 & 執行並停止授權測試工作 & \texttt{attack\_runner.py} \\
+F-05 & 即時傳送工作輸出與狀態 & Socket.IO \\
+F-06 & 啟動與停止 WIDS 監控 & \texttt{wids.py} \\
+F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
+\bottomrule
+\end{longtable}
+
+完整流程為：掃描目標、選定 BSSID、執行基線稽核、選擇授權攻擊情境、啟動 WIDS 觀測、檢視即時事件，以及匯整稽核紀錄。
+
+\chapter{研究方法與核心實作}
+\section{自動化合規與組態檢測實作}
+說明 WPS、WPA3／802.1X、PMF、SSID 廣播與用戶端隔離五項檢查的判定規則，以及 PASS、FAIL、WARN、INFO、MANUAL 狀態的意義。
+
+\section{主動攻擊模擬腳本實作}
+說明 wifite 自動化稽核、握手擷取、deauthentication、WPS 測試、Rogue AP 與 PMF probe 的測試目的、必要參數、工作狀態與安全限制。
+
+\section{無線入侵偵測模組（WIDS）開發}
+介紹 Scapy 實體監聽路徑與無 Scapy 時的模擬路徑，並說明 deauth flood、重傳率異常、握手流程異常與 Rogue AP 事件的偵測設計。
+
+\section{平台 API、即時通訊與稽核紀錄}
+說明 Flask API、Socket.IO 事件與 JSONL 日誌的資料流，以及測試工作與事件的追溯方式。
+
+\section*{開發環境}
+待補：作業系統、Python 版本、套件版本、無線網卡型號、監聽模式設定與測試工具版本。
+
+\chapter{實驗設計與成效評估}
+\section{實驗環境與設備建置}
+\begin{table}[htbp]
+\centering
+\caption{實驗環境設定表}
+\begin{tabular}{p{0.22\textwidth}p{0.35\textwidth}p{0.28\textwidth}}
+\toprule
+項目 & 設定 & 待填資料 \\
+\midrule
+測試平台 & ARTC T-BOX／實驗室 AP & 型號、韌體版本 \\
+測試主機 & Kali／Parrot／其他 & CPU、記憶體、OS \\
+無線介面 & 監聽模式網卡 & 晶片、驅動、介面名稱 \\
+測試工具 & iw、wifite2、aircrack-ng、reaver、Scapy & 版本 \\
+網路設定 & 測試 SSID、頻道、加密方式 & 去識別化資料 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{實驗情境設計}
+\begin{table}[htbp]
+\centering
+\caption{實驗案例與觀測指標}
+\begin{tabular}{p{0.12\textwidth}p{0.35\textwidth}p{0.35\textwidth}}
+\toprule
+案例 & 目的 & 主要觀測結果 \\
+\midrule
+E-01 & 被動掃描 & 發現數、解析正確率、耗時 \\
+E-02 & 組態稽核 & PASS／FAIL／WARN 一致性 \\
+E-03 & PMF／deauth & 事件數、偵測延遲、連線影響 \\
+E-04 & Rogue AP & 告警正確性、誤報 \\
+E-05 & 握手流程 & 成功率、耗時、紀錄完整性 \\
+E-06 & 稽核追溯 & 時間戳、分類、工作 ID 關聯 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{評估指標}
+評估面向包含功能正確性、偵測延遲、召回率、精確率、誤報率、掃描耗時、API 回應時間、同時工作數、資源使用量與稽核紀錄完整性。
+
+\section{實驗結果與效能分析}
+待填入實體測試表格、統計圖、封包或日誌截圖。必須分別標示真實硬體結果與模擬資料，不得以 stub 輸出作為實體網路效能結論。
+
+\chapter{討論}
+\section{研究成果對 UN R155 合規性之貢獻}
+逐項回應第一章研究目的，並以第三章功能需求及第五章實驗結果作為證據。
+
+\section{測試框架之侷限性與挑戰}
+目前外部工具輸出尚未完整結構化，WIDS 多數事件仍為骨架或模擬輸出，且尚未具備角色型身分驗證、正式報告匯出、日誌防竄改與集中管理機制。
+
+\section{合規與實務應用意義}
+本平台可作為 UN R155／ISO/SAE 21434 測試證據產生工具的原型，但仍需由組織流程、風險分析、權限控管與正式審查補足完整合規要求。
+
+\chapter{結論與未來展望}
+\section{研究總結}
+本研究完成一套車聯網 Wi-Fi 資安測試平台原型，將掃描、組態稽核、授權測試、WIDS 監控與稽核紀錄整合至單一 Web 流程。正式結論待完成實體測試後，加入量化數據與限制條件。
+
+\section{未來工作}
+\begin{enumerate}
+  \item 完成 wifite2、封包擷取檔與測試結果的結構化解析。
+  \item 補充 DragonBlood、降級攻擊與真實 deauth reason-code 分類。
+  \item 完成 beacon flood、握手異常及 Rogue AP 的 Scapy 偵測器。
+  \item 加入角色型身分驗證、權限控管與安全命令參數驗證。
+  \item 建立 PDF／UN R155 證據包匯出與報告模板。
+  \item 於 ARTC T-BOX 測試台進行多版本韌體、多種加密設定與重複樣本驗證。
+\end{enumerate}
+
+\nocite{*}
+\bibliographystyle{plain}
+\bibliography{references}
+
+\appendix
+\chapter{API 與日誌欄位}
+此附錄待補 API 請求／回應、JSONL 欄位定義、測試授權確認表及實驗截圖。
+
+\end{document}

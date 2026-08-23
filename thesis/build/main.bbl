@@ -1,0 +1,65 @@
+\begin{thebibliography}{10}
+
+\bibitem{boumiza2017intrusion}
+S.~Boumiza and R.~Braham.
+\newblock Intrusion threats and security solutions for autonomous vehicle
+  networks.
+\newblock In {\em 2017 IEEE/ACS 14th International Conference on Computer
+  Systems and Applications}, pages 120--127, Hammamet, Tunisia, 2017.
+
+\bibitem{checkoway2011comprehensive}
+S.~Checkoway, D.~McCoy, B.~Kantor, D.~Anderson, H.~Shacham, S.~Savage,
+  K.~Koscher, A.~Czeskis, F.~Roesner, and T.~Kohno.
+\newblock Comprehensive experimental analyses of automotive attack surfaces.
+\newblock In {\em Proceedings of the USENIX Security Symposium}, San Francisco,
+  CA, 2011.
+
+\bibitem{dennemeyer2025mobility}
+{Dennemeyer}.
+\newblock Software solutions for automotive: Cybersecurity in mobility, 2025.
+
+\bibitem{ieee80211}
+{IEEE Standards Association}.
+\newblock Ieee 802.11 wireless lan standard, 2020.
+\newblock 使用版本與 PMF 條文待確認.
+
+\bibitem{iso21434}
+{International Organization for Standardization and SAE International}.
+\newblock Iso/sae 21434:2021 road vehicles -- cybersecurity engineering, 2021.
+
+\bibitem{koscher2010automobile}
+K.~Koscher, A.~Czeskis, F.~Roesner, S.~Patel, T.~Kohno, S.~Checkoway, D.~McCoy,
+  B.~Kantor, D.~Anderson, H.~Shacham, and S.~Savage.
+\newblock Experimental security analysis of a modern automobile.
+\newblock In {\em 2010 IEEE Symposium on Security and Privacy}, pages 447--462.
+  IEEE Computer Society, 2010.
+
+\bibitem{ma2022telematics}
+Chao Ma, Hao Zhao, and Tong Wang.
+\newblock Research on cyber security risk of telematics box in intelligent
+  connected vehicle.
+\newblock {\em MATEC Web of Conferences}, 355:03030, 2022.
+
+\bibitem{miller2015vehicle}
+C.~Miller and C.~Valasek.
+\newblock Remote exploitation of an unaltered passenger vehicle.
+\newblock Black Hat USA, 2015.
+
+\bibitem{sun2023automotive}
+Y.~Sun et~al.
+\newblock Cybersecurity testing for automotive domain: A survey.
+\newblock {\em IEEE Access}, 2023.
+\newblock 作者完整名單與卷期頁碼待補.
+
+\bibitem{unr155}
+{United Nations Economic Commission for Europe}.
+\newblock Un regulation no. 155: Uniform provisions concerning the approval of
+  vehicles with regards to cyber security and cyber security management system,
+  2021.
+\newblock Annex 5；正式引用版本待確認.
+
+\bibitem{cht2022iso21434}
+{中華電信研究院}.
+\newblock 車聯網軟體更新國際標準：iso 21434 簡介, 2022.
+
+\end{thebibliography}
