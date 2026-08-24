@@ -1,11 +1,17 @@
 \addvspace {10\p@ }
 \addvspace {10\p@ }
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {3.1}{系統功能需求與對應實作}}{4}{table.3.1}%
+\contentsline {table}{\numberline {3.1}{\ignorespaces AP 模式攻擊面與對應威脅}}{6}{table.3.1}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {4.1}{系統功能需求與對應實作}}{9}{table.4.1}%
+\contentsline {table}{\numberline {4.2}{授權攻擊情境與對應工具}}{10}{table.4.2}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {5.1}{\ignorespaces 實驗環境設定表}}{13}{table.5.1}%
+\contentsline {table}{\numberline {5.2}{\ignorespaces Deauth--Evil Twin 攻擊鏈判定準則}}{14}{table.5.2}%
+\contentsline {table}{\numberline {5.3}{\ignorespaces 三道防線與其作用環節}}{15}{table.5.3}%
+\contentsline {table}{\numberline {5.4}{\ignorespaces 實驗案例與觀測指標}}{16}{table.5.4}%
 \addvspace {10\p@ }
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {5.1}{\ignorespaces 實驗環境設定表}}{7}{table.33}%
-\contentsline {table}{\numberline {5.2}{\ignorespaces 實驗案例與觀測指標}}{7}{table.35}%
 \addvspace {10\p@ }
-\addvspace {10\p@ }
-\addvspace {10\p@ }
+\contentsline {table}{\numberline {A.1}{系統 REST API 端點}}{21}{table.A.1}%
+\contentsline {table}{\numberline {A.2}{\texttt {logs/testing.jsonl} 欄位定義}}{22}{table.A.2}%

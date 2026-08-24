@@ -4,7 +4,6 @@
 \usepackage{xeCJK}
 \setmainfont{Times New Roman}
 \setCJKmainfont{PingFang TC}
-\setCJKmonofont{PingFang TC}
 \usepackage[margin=2.8cm]{geometry}
 \usepackage{setspace}
 \onehalfspacing
@@ -16,17 +15,25 @@
 \usepackage{xcolor}
 \usepackage{listings}
 \usepackage{hyperref}
-\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue,hypertexnames=false}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 \usepackage{indentfirst}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\renewcommand{\contentsname}{目錄}
+\renewcommand\listfigurename{圖目錄}
+\renewcommand\listtablename{表目錄}
+\renewcommand{\bibname}{參考文獻}
+\usepackage{titlesec}
+\titleformat{\chapter}{\huge\bfseries}{第\,\thechapter\,章}{1em}{}
 
-\title{基於 UN R155 規範之車載 Wi-Fi 資安測試框架與威脅建模研究}
-\author{%
-  研究單位：財團法人車輛研究測試中心\\
-  計畫主持人：許富皓 教授\\[0.5em]
-  撰寫人：丁時揚、陳玨嶧、李宥寬\\
-  執行機構：國立中央大學資訊工程學系
-}
-\date{執行期間：中華民國 115 年 01 月 01 日至 115 年 11 月 30 日}
+\title{基於 UN R155 規範之車載 Wi-Fi 資安測試框架與威脅建模研究\\[6pt]
+\large A Threat-Modeling-Based Wi-Fi Security Testing Framework for\\
+In-Vehicle Networks under UN Regulation No.\,155}
+\author{撰寫人：丁時揚、陳玨嶧、李宥寬\\
+指導教授：許富皓 教授\\
+執行機構：國立中央大學資訊工程學系\\
+研究單位：財團法人車輛研究測試中心（ARTC）}
+\date{執行期間：115 年 01 月 01 日至 115 年 11 月 30 日}
 
 \lstset{
   basicstyle=\ttfamily\small,
@@ -38,19 +45,27 @@
 \begin{document}
 
 \maketitle
-\pagenumbering{roman}
+\pagenumbering{Roman}
 
 \chapter*{摘要}
-隨著車載資訊系統與無線連線功能普及，車輛 Wi-Fi 介面可能成為攻擊者進入車內網路或干擾車載服務的入口。本研究針對車聯網測試場域，設計並實作一套以 Web 為操作介面的 Wi-Fi 資安測試平台，整合無線網路掃描、安全組態稽核、授權攻擊情境、無線入侵偵測（Wireless Intrusion Detection System, WIDS）及可追溯的測試紀錄。
+車聯網（Internet of Vehicles, IoV）與車載資通訊單元（T-Box）的普及，使 Wi-Fi 成為車輛對外連線的重要介面之一，同時也擴大了未授權存取、惡意熱點誘騙、管理框架干擾與弱認證等攻擊面。UN R155 與 ISO/SAE 21434 進一步要求車廠建立涵蓋風險評估、驗證測試與證據留存的資安管理系統（CSMS），但業界目前仍缺乏針對車載環境（低延遲、高移動性、多為嵌入式作業系統）量身打造的自動化 Wi-Fi 資安測試腳本與標準化驗證流程，測試人員往往須手動切換多個命令列工具，導致操作不一致、結果難以追溯。
 
-本平台採用 Flask 與 Socket.IO 建立前後端架構，後端負責串接無線掃描、測試工具與封包監控元件，並在缺少實體測試工具時提供模擬輸出，以支援開發與展示。系統可針對 WPS、WPA3／802.1X、PMF（802.11w）、SSID 廣播及用戶端隔離等項目進行初步稽核，並以 deauthentication、Rogue AP、WPS 測試、握手封包擷取與 PMF probe 等情境評估防護能力。
+本研究以 ARTC 車聯網測試場域為對象，建立一套以威脅建模為核心的車載 Wi-Fi 資安測試框架，並實作對應之 Web 化可視化測試平台。首先將 T-Box 的無線運作情境區分為「AP 模式」與「Client／Station 模式」兩類，分別界定其攻擊面：AP 模式聚焦於安全組態缺陷（WPS 啟用、弱加密、缺乏管理訊框保護、缺乏用戶端隔離）；Client／Station 模式則聚焦於偽造熱點誘騙、連線阻斷服務與異常握手封包注入，並進一步將 Deauthentication 與 Evil Twin 二項攻擊技術串接為具因果關係的「Deauth–Evil Twin 整合攻擊鏈」，用以檢驗 PMF（802.11w）、WPA3／802.1X 伺服器端驗證與用戶端組態三道防線的有效性。
 
-目前成果以功能原型與流程驗證為主，實體 T-BOX 測試、量化效能數據及真實工具輸出仍需於授權實驗環境中補充。
+系統以 Flask 與 Socket.IO 建立前後端架構，後端整合無線掃描、安全組態稽核、授權攻擊情境執行、無線入侵偵測（WIDS）與 JSONL 稽核紀錄五大模組；當缺少實體測試工具或監聽模式硬體時，系統自動切換為模擬輸出，以支援開發、教學與展示，並於論文中明確區分模擬結果與實體測試結果。WIDS 模組並實作「Deauth 突發流量後隨即出現相同 SSID、不同 BSSID 新 AP」之高信度關聯規則，作為 Evil Twin 攻擊之核心判定依據。
 
-\noindent\textbf{關鍵詞：}車聯網、Wi-Fi 資安、WIDS、滲透測試、UN R155、ISO/SAE 21434
+目前成果以功能原型、威脅模型與流程驗證為主；實體 T-Box 測試、量化偵測準確率與效能數據仍待於 ARTC 授權實驗環境中補充。
+
+\noindent\textbf{關鍵詞：}車聯網、車載 Wi-Fi 資安、威脅建模、WIDS、Deauthentication、Evil Twin、滲透測試、UN R155、ISO/SAE 21434
 
 \chapter*{Abstract}
-\noindent\textit{To be translated after the research scope and experimental results are finalized.}
+The growing use of Wi-Fi as an external connectivity interface for the in-vehicle Telematics Box (T-Box) has expanded the attack surface of connected vehicles, exposing them to unauthorized access, rogue-AP deception, management-frame interference, and weak-authentication attacks. UN Regulation No.\,155 and ISO/SAE 21434 require manufacturers to operate a Cyber Security Management System (CSMS) that covers risk assessment, verification testing, and traceable evidence, yet the industry still lacks automated, vehicle-specific Wi-Fi security test scripts and a standardized verification workflow suited to the low-latency, high-mobility, embedded nature of in-vehicle systems.
+
+This study proposes a threat-modeling-driven Wi-Fi security testing framework for in-vehicle networks, targeting the ARTC connected-vehicle testbed, together with a Web-based visualized testing platform. The T-Box's wireless operating context is first divided into an \emph{AP mode} and a \emph{Client/Station mode}, each with a distinct attack surface: AP mode centers on configuration weaknesses (WPS enabled, weak encryption, missing PMF, missing client isolation), while Client/Station mode centers on rogue-AP deception, connection denial-of-service, and abnormal handshake injection. A \emph{Deauth--Evil Twin attack chain} is further constructed by chaining deauthentication and Evil Twin techniques into a causally linked scenario used to evaluate three defense layers: PMF (802.11w), WPA3/802.1X server-side certificate validation, and client-side configuration.
+
+The platform is built on Flask and Socket.IO, integrating wireless scanning, security configuration auditing, authorized attack-scenario execution, wireless intrusion detection (WIDS), and JSONL-based audit logging. A simulation fallback is provided when physical tools or monitor-mode hardware are unavailable, and simulated results are explicitly separated from physical-hardware results throughout the thesis. The WIDS module implements a high-confidence correlation rule --- a burst of deauthentication frames immediately followed by a new AP sharing the same SSID but a different BSSID --- as the primary criterion for Evil Twin detection.
+
+Current results consist of a functional prototype, a threat model, and workflow validation; physical T-Box testing, quantitative detection accuracy, and performance data remain to be collected in an authorized ARTC test environment.
 
 \tableofcontents
 \listoftables
@@ -58,52 +73,157 @@
 \pagenumbering{arabic}
 
 \chapter{緒論}
-\section{研究背景與動機}
-車聯網、T-BOX 與車內 Wi-Fi 逐漸成為車輛服務的重要連線介面。無線介面的便利性同時擴大了未授權存取、管理框架干擾、弱認證與 Rogue AP 等攻擊面。UN R155 與 ISO/SAE 21434 亦要求製造商建立資安風險管理、驗證測試與證據追溯流程。
 
-現有 Wi-Fi 資安測試往往依賴多個命令列工具，測試人員需要人工切換掃描、稽核、攻擊與監控流程，結果也容易分散在不同終端機輸出中。因此，本研究將常用測試功能整合至單一 Web 流程，降低操作差異並改善結果留存。
+\section{研究背景與動機}
+車聯網（V2X）的發展使車輛從封閉式電子系統逐漸轉變為具備遠端連線能力的行動終端，車載資通訊單元（Telematics Box, T-Box）則是銜接車內網路與外部通訊（行動網路、Wi-Fi、藍牙）的核心元件。T-Box 常見的 Wi-Fi 應用情境包含：作為 AP 提供車內娛樂系統或乘客裝置連線，以及作為 Client／Station 連接維修廠內網、公共熱點或原廠 OTA 更新伺服器。這兩種角色分別暴露出不同的攻擊面，也是本研究進行威脅建模的出發點。
+
+國際法規面，UN R155 要求車輛型式認證須具備資安管理系統（CSMS），涵蓋風險評估、緩解措施與持續監控\cite{unr155}；ISO/SAE 21434 則提供威脅分析與風險評估（TARA）方法論作為工程實務依循\cite{iso21434}。兩者皆強調「可驗證、可追溯」的測試證據，而非僅止於文件化的風險陳述。對車廠與測試機構而言，如何在有限人力下建立可重複執行、具證據力的 Wi-Fi 資安測試流程，是合規落地的實務挑戰。
 
 \section{問題陳述}
-車載 Wi-Fi 測試面臨測試流程分散、攻擊情境難以重複、偵測結果缺少一致格式，以及合規證據不易追溯等問題。本研究聚焦於如何以威脅模型連結 UN R155 要求、Wi-Fi 測試情境與 WIDS 偵測結果。
+車載 Wi-Fi 通訊在開放電磁環境下面臨若干具體威脅：其一為\textbf{惡意熱點（Rogue AP／Evil Twin）}，攻擊者複製合法 SSID 並以更強訊號誘導車機自動連線；其二為\textbf{中間人攻擊（MITM）}，一旦車機誤連至攻擊者控制的熱點，憑證竊取與惡意 OTA 導向即成為可能。然而，目前業界的資安測試工具多沿用一般 IT 網路的弱點掃描邏輯，並未考量車載環境「低延遲、高移動性、多為資源受限之嵌入式系統」的特性，也缺乏針對 Wi-Fi 專屬攻擊面（PMF、WPS、Client Isolation 等）的自動化測試腳本與標準化驗證流程。測試人員必須在多個命令列工具（\texttt{iw}、\texttt{aircrack-ng}、\texttt{reaver}、\texttt{hostapd} 等）間手動切換，操作步驟與判讀標準因人而異，結果也分散在不同終端機輸出中，難以形成可供稽核的合規證據。
 
 \section{研究目的與貢獻}
+本研究之具體目的與貢獻如下：
 \begin{enumerate}
-  \item 建立符合車載 Wi-Fi 測試需求的自動化測試框架。
-  \item 建立涵蓋被動掃描、組態檢測、主動攻擊模擬與 WIDS 的整合流程。
-  \item 將測試情境與 UN R155／ISO/SAE 21434 的資安驗證需求建立對照關係。
-  \item 建立具時間戳、分類與 JSONL 格式的測試稽核軌跡，支援後續合規證據整理。
+  \item 建立針對 T-Box Wi-Fi 介面之\textbf{威脅分類模型}，以「AP 模式」與「Client／Station 模式」界定攻擊面，並提出具因果關係的 Deauth–Evil Twin 整合攻擊鏈作為代表性測試情境。
+  \item 開發\textbf{自動化資安測試腳本}與\textbf{無線入侵偵測模組（WIDS）}，將 WPS、WPA3／802.1X、PMF、SSID 廣播、用戶端隔離等安全要求轉換為可重複執行的檢查項目與偵測規則。
+  \item 建構\textbf{可視化測試與合規驗證平台}，以集中式 Web 介面整合掃描、稽核、攻擊測試與 WIDS 監控，並提供具時間戳、分類與 JSONL 格式的稽核軌跡。
+  \item 以授權測試情境於 ARTC 測試場域驗證車聯網 Wi-Fi 防護能力，為 UN R155／ISO-SAE 21434 所要求之驗證測試證據提供原型工具。
 \end{enumerate}
 
-\section{論文架構}
-本論文共分為七章。第一章說明研究背景、問題與貢獻；第二章回顧車聯網資安標準與相關研究；第三章提出威脅模型與平台架構；第四章說明研究方法與核心實作；第五章呈現實驗設計與成效評估；第六章討論合規貢獻與限制；第七章總結研究成果並提出未來工作。
+\section{研究範圍與限制}
+本研究對象為 ARTC T-Box 測試台、實驗室 AP 與明確授權的無線目標，聚焦於 IEEE 802.11 Wi-Fi 層及其與車載測試流程的介面，不涵蓋完整車內 CAN 匯流排或車載乙太網路之漏洞分析，惟於第七章討論由 Wi-Fi 端點延伸至車內網路之後續研究方向。現階段部分模組在缺少 Kali／Parrot 測試工具或監聽模式硬體時採用模擬資料，論文之實驗章節將分開呈現模擬結果與實體結果，不以模擬輸出作為實體網路效能之結論。所有攻擊情境僅能於書面授權、電磁隔離（屏蔽箱／電波暗室）之環境中執行。
 
-\section*{研究範圍與限制}
-本研究對象為 ARTC T-BOX 測試台、實驗室 AP 與明確授權的無線目標，聚焦 Wi-Fi 層及其與車載測試流程的介面，不涵蓋完整車內 CAN 或車載乙太網路漏洞分析。現階段部分模組在缺少 Kali／Parrot 工具或監聽模式硬體時採用模擬資料，論文實驗章將分開呈現模擬結果與實體結果。所有攻擊情境僅能在書面授權的隔離環境執行。
+\section{論文組織}
+本論文共分為七章：第一章為緒論，說明研究背景、問題陳述與研究目的；第二章回顧車聯網資安、802.11 安全機制與相關文獻；第三章提出威脅模型與系統整體架構；第四章說明研究方法與各模組之核心實作；第五章描述實驗設計與成效評估方法；第六章討論研究成果之合規意義與限制；第七章總結研究成果並提出未來工作方向。
 
 \chapter{文獻探討與相關研究}
+
 \section{車聯網與 T-Box 資安架構}
-介紹車載終端、T-Box、AP、測試主機與車內網路的關係，並界定本研究的測試邊界。
+T-Box 一般整合行動網路數據機、GNSS 定位、CAN／車載乙太網路介面與短程無線通訊（Wi-Fi、藍牙）於單一嵌入式系統中，並透過閘道與車內其他 ECU 連通。短程無線介面因具備使用者可及性與相對開放的協定堆疊，成為研究人員與攻擊者皆容易切入的測試點；相較於需要專用診斷設備的 CAN 匯流排，Wi-Fi 攻擊面的重現成本更低、攻擊工具鏈也更成熟（見 2.4 節），因此適合作為車載資安測試自動化的優先對象\cite{ma2022telematics}。
 
 \section{車輛網路安全法規與標準}
-整理 UN R155、ISO/SAE 21434 與 IEEE 802.11 相關安全機制，說明資安風險管理、測試驗證與證據保存的關聯。
+UN R155 要求車廠建立資安管理系統，涵蓋供應鏈風險管理、威脅監控、事件應變與型式認證後之持續驗證，並於 Annex 5 提供威脅與緩解措施的參考清單\cite{unr155}。ISO/SAE 21434 則提供工程層級的威脅分析與風險評估（TARA）方法論，定義資產、損害情境、攻擊路徑與風險等級之對應關係\cite{iso21434,cht2022iso21434}。兩者在實務落地上的共同挑戰在於：風險評估文件需要具體、可重複的測試證據支撐，而非僅憑經驗判斷，這也是本研究建立自動化測試與稽核紀錄機制的主要動機之一。
+
+\section{IEEE 802.11 安全機制}
+本研究涉及之 802.11 安全機制包括：WPA2 個人／企業模式、WPA3-SAE（Simultaneous Authentication of Equals）、802.1X 企業驗證、WPS（Wi-Fi Protected Setup）、管理訊框保護（Protected Management Frames, PMF／IEEE 802.11w）、SSID 廣播策略，以及用戶端隔離（Client Isolation）\cite{ieee80211}。其中 WPS PIN 機制因設計缺陷長期存在暴力破解風險；PMF 透過加密管理訊框（如 deauthentication、disassociation）防止偽造斷線攻擊，是抵禦本研究攻擊鏈的第一道防線；WPA3-SAE 雖以 Dragonfly 交握取代 WPA2 的 4-way handshake 以降低離線字典攻擊風險，但仍被證實存在旁通道與降級攻擊等實作層級弱點\cite{vanhoef2020dragonblood}，WPA2 之 4-way handshake 亦曾被證實存在金鑰重裝攻擊（KRACK）\cite{vanhoef2017krack}，凸顯「協定設計安全」與「實作正確性」須同時檢驗的必要性，此亦為本研究於稽核模組中同時檢查加密機制與 PMF 狀態，而非僅檢查加密演算法名稱的原因。
 
 \section{無線網路攻擊手法分析}
-說明 WPA2、WPA3-SAE、802.1X、WPS、PMF／IEEE 802.11w、SSID 廣播與用戶端隔離的安全意義，並分析 deauthentication、握手擷取、WPS 測試、Rogue AP／Evil Twin 及 PMF 行為探測。
+車載資安領域的經典研究已證實，攻擊者可經由車輛對外介面取得車內網路的存取能力，包括透過蜂巢式網路、藍牙與 Wi-Fi 等管道進行遠端滲透，並進一步影響行車安全相關 ECU\cite{checkoway2011comprehensive,koscher2010automobile,miller2015vehicle}。在 Wi-Fi 層級，常見攻擊手法包括：
+\begin{itemize}
+  \item \textbf{Deauthentication／Disassociation 攻擊}：偽造管理訊框迫使目標裝置斷線，常作為其他攻擊之前置手段。
+  \item \textbf{Rogue AP／Evil Twin}：複製合法 SSID 並以更強訊號建立偽造熱點，誘導裝置自動連線以進行 MITM，此類攻擊之偵測長年倚賴用戶端側時序或訊號特徵比對\cite{han2011timingrogueap}，近年並發展出完整之攻擊變異分類與 Kill Chain 模型\cite{augustyniak2026eviltwin}。
+  \item \textbf{WPS PIN 暴力破解}：利用 WPS 8 碼 PIN 可拆解驗證之設計缺陷，將原本 $10^{8}$ 種組合之搜尋空間降至約 11,000 次嘗試即可窮舉，繞過強加密取得 PSK\cite{viehbock2011wps}。
+  \item \textbf{握手封包擷取與離線破解}：擷取 4-way handshake 後於本地進行字典或 GPU 加速破解。
+\end{itemize}
+本論文於第三章將 Deauthentication 與 Evil Twin 兩項技術串接為具因果關係的攻擊鏈，用以模擬「先製造斷線、再誘導誤連」之真實威脅路徑，而非孤立評估單一攻擊手法\cite{boumiza2017intrusion}。
 
-\section{現有車載資安測試與防護技術之探討與侷限}
-本研究涵蓋 deauthentication、握手擷取、WPS 測試、Rogue AP／Evil Twin 及 PMF 行為探測。論文描述測試目的與觀測指標，不提供未授權使用指南。
+\section{現有車載資安測試與防護技術之侷限}
+現行 IT 弱點掃描工具（如通用漏洞掃描器）多以主機、服務或已知 CVE 為導向，缺乏對 802.11 管理訊框層級行為（PMF、握手序列、Rogue AP 關聯性）的專屬檢測邏輯，亦未考量車載場域「測試視窗短、目標裝置行動性高」之限制。業界對車載資安測試之討論多聚焦於流程與合規要求本身\cite{luo2022automotive,dennemeyer2025mobility}；即便學術界已提出將車載資安測試自動化之方法論\cite{marksteiner2019automation}，其討論多集中於車輛網路（如 CAN 匯流排）與整體測試流程之自動化框架設計，較少提供可直接落地執行、針對 Wi-Fi 攻擊面之開源自動化腳本與可視化平台。本研究之定位即在於填補「合規要求」與「可執行測試工具」之間的落差。
+
+\section{相關工具與技術基礎}
+系統實作採用 Flask 作為 REST API 框架、Socket.IO 提供即時雙向通訊；無線掃描與稽核倚賴 \texttt{iw}；攻擊情境執行整合 wifite2（自動化稽核）、aircrack-ng 套件之 \texttt{aireplay-ng}（deauth）、reaver（WPS 暴力破解）與 hostapd（Rogue AP／Evil Twin 架設）；WIDS 模組則以 Scapy 進行封包層級的管理訊框監聽與特徵擷取。各工具之角色分工詳見第四章實作說明。
 
 \chapter{威脅建模與系統架構}
+
 \section{測試目標與環境定義}
-本研究測試目標為 ARTC T-BOX 與其車載 Wi-Fi 服務，測試環境由測試主機、無線介面、受測 AP／T-Box、隔離網路與紀錄系統構成。測試活動限於具備書面授權的設備與網段。
+本研究之測試目標為 ARTC 車聯網測試場域內之 T-Box 測試台與實驗室 AP，測試環境要求為電磁隔離之屏蔽箱或電波暗室，避免測試訊號干擾場域外之無線網路，並確保攻擊情境（deauth、Rogue AP）之影響範圍可控。所有測試前須完成書面授權確認，明確界定受測 BSSID／SSID、測試時間窗與測試人員權責，並於測試紀錄中保留授權依據，以符合 UN R155 對測試證據可追溯性之要求。
 
 \section{威脅模型}
-依照資產、信任邊界、攻擊者能力與攻擊面建立威脅模型。資產包含 Wi-Fi 認證資訊、車載服務可用性、管理框架完整性與測試證據；攻擊者模型區分鄰近無線攻擊者與可接近測試網路的攻擊者，並將被動偵察、組態弱點、管理框架干擾及 Rogue AP 納入分析。
+本研究依 T-Box 於 Wi-Fi 層之角色，將攻擊面區分為「AP 模式」與「Client／Station 模式」兩類，分別對應系統實作中的兩個處理階段（見 3.3 節），並以此作為攻擊情境與檢測邏輯設計之依據。
+
+\subsection{AP 模式之攻擊面}
+當 T-Box 作為 AP（例如提供車內娛樂系統或乘客裝置連線）時，攻擊面主要來自安全組態層級的缺陷，而非協定本身的漏洞：
+
+\begin{table}[htbp]
+\centering
+\caption{AP 模式攻擊面與對應威脅}
+\label{tab:threat-ap}
+\begin{tabular}{p{0.24\textwidth}p{0.38\textwidth}p{0.28\textwidth}}
+\toprule
+攻擊面 & 威脅情境 & 對應防護 \\
+\midrule
+WPS 啟用 & PIN 暴力破解繞過強加密 & 停用 WPS \\
+弱加密／認證 & 離線字典攻擊、金鑰重裝（KRACK） & WPA3-SAE 或 802.1X \\
+缺乏管理訊框保護 & 偽造 deauth／disassoc 迫使斷線 & PMF（802.11w）required \\
+缺乏用戶端隔離 & 已連線裝置間橫向移動 & 啟用 Client Isolation \\
+SSID 廣播不當 & 目標識別、隱藏 SSID 之偽安全假象 & 依風險評估決定廣播策略 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Client／Station 模式之攻擊面}
+當 T-Box 作為 Client／Station（例如連接維修廠內網、公共熱點或 OTA 伺服器）時，攻擊面轉為「誘導裝置主動誤連」與「阻斷既有連線」：偽造 AP 誘騙（Rogue AP／Evil Twin）、連線阻斷服務（Deauth flood）與異常握手封包注入。此三者中，Deauthentication 與 Evil Twin 具備明確的前後因果關係，構成本研究之核心測試情境：
+
+\begin{quote}
+攻擊者先架設一個複製目標 SSID、訊號強度更高的 Evil Twin 熱點；再對已連線之 T-Box 注入 Deauth 訊框迫使其斷線；T-Box 於重新搜尋網路時，若僅依 SSID 名稱自動連線，即可能誤連至攻擊者控制的 Evil Twin，進而遭受中間人攻擊、憑證竊取或惡意 OTA 導向。
+\end{quote}
+
+此攻擊鏈之詳細測試流程、判定準則與三道防線對應關係，於第五章 5.2 節以完整實驗情境呈現。
 
 \section{測試平台與 WIDS 系統架構設計}
-系統由瀏覽器、Flask 後端、掃描模組、安全稽核模組、攻擊工作管理器、WIDS 監控器與 JSONL 紀錄器組成。瀏覽器透過 REST API 發出控制請求，再透過 Socket.IO 接收工作狀態、即時輸出與 WIDS 事件。
 
-\section{功能需求與測試流程}
+\subsection{系統整體架構}
+系統由瀏覽器端可視化平台、Flask＋Socket.IO 後端，以及五個功能模組組成：無線掃描（\texttt{scan.py}）、安全組態稽核（\texttt{config\_audit.py}）、攻擊工作管理器（\texttt{attack\_runner.py}）、WIDS 監控器（\texttt{wids.py}）與 JSONL 稽核紀錄器（\texttt{logger.py}）。瀏覽器透過 REST API 發出控制請求（啟動掃描、稽核、攻擊工作、WIDS），並透過 Socket.IO 接收工作狀態（\texttt{job\_update}）、即時輸出（\texttt{job\_output}）與 WIDS 事件（\texttt{wids\_event}），圖 \ref{fig:arch} 為系統整體架構示意。
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=10mm and 8mm,
+  box/.style={draw, rounded corners, align=center, minimum height=9mm, minimum width=28mm, font=\small},
+  mod/.style={draw, rounded corners, align=center, minimum height=9mm, minimum width=24mm, font=\scriptsize, fill=gray!8},
+  >=Latex
+]
+\node[box] (browser) {瀏覽器\\可視化測試平台};
+\node[box, below=of browser] (backend) {Flask + Socket.IO\\後端 (app.py)};
+\node[mod, below=16mm of backend, xshift=-46mm] (scan) {scan.py\\無線掃描};
+\node[mod, right=of scan] (audit) {config\_audit.py\\安全組態稽核};
+\node[mod, right=of audit] (attack) {attack\_runner.py\\攻擊工作管理};
+\node[mod, right=of attack] (wids) {wids.py\\WIDS 監控};
+\node[mod, right=of wids] (logger) {logger.py\\JSONL 稽核紀錄};
+
+\draw[->] (browser.south) -- node[right,font=\scriptsize]{REST API 請求} (backend.north);
+\draw[->] ([xshift=-6mm]backend.south) to[out=180,in=90] node[left,align=center,font=\scriptsize]{Socket.IO\\job/wids 事件} ([xshift=-30mm]browser.south);
+\foreach \m in {scan,audit,attack,wids,logger} {
+  \draw[->] (backend.south) -- (\m.north);
+}
+\end{tikzpicture}
+\caption{系統整體架構：瀏覽器、Flask 後端與五大功能模組}
+\label{fig:arch}
+\end{figure}
+
+\subsection{模組化設計理念}
+五個後端模組依功能可歸納為三類：
+\begin{enumerate}
+  \item \textbf{合規檢測模組}：\texttt{scan.py} 與 \texttt{config\_audit.py}，負責被動掃描與 WPS／加密／PMF／SSID 廣播等組態稽核。
+  \item \textbf{攻擊模擬模組}：\texttt{attack\_runner.py}，以工作（job）為單位管理 wifite2、aireplay-ng、reaver、hostapd 等外部工具之啟動、即時輸出串流與停止。
+  \item \textbf{異常偵測模組}：\texttt{wids.py}，以 Scapy 監聽管理訊框，實作滑動時間窗計數與 Rogue AP 關聯規則；\texttt{logger.py} 則橫向支援前三者，將所有事件統一寫入 JSONL 稽核軌跡。
+\end{enumerate}
+此模組化設計使合規檢測、攻擊模擬與異常偵測三者可獨立開發、獨立測試，亦便於日後替換或新增底層工具（例如以 hcxdumptool 取代 aircrack-ng 套件之握手擷取功能）而不影響上層 API 與前端介面。
+
+\subsection{AP／Client 雙模式測試流程}
+承 3.2 節之威脅模型，前端可視化平台將完整測試流程劃分為兩個模式、四個階段，並以流水線（pipeline）形式依序呈現：
+
+\medskip\noindent\textbf{AP 模式}
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{安全組態檢測}：被動掃描選定目標 AP，執行 WPS／WPA3-802.1X／SSID 廣播稽核。
+  \item \textbf{進階防護技術檢測}：檢查 PMF（802.11w）與用戶端隔離，並可搭配主動 PMF 探測情境。
+\end{enumerate}
+
+\noindent\textbf{Client／Station 模式}
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{主動防禦與異常偵測}：啟動 WIDS 於固定時間窗內監聽並回報異常事件。
+  \item \textbf{攻擊模擬與驗證}：執行 Deauth、Rogue AP 等授權攻擊情境並彙整完整日誌。
+\end{enumerate}
+
+此設計使測試工程師可依受測 T-Box 當下角色（AP 或 Client）選擇對應的測試路徑，避免將兩種攻擊面之檢測項目混雜於單一流程中。
+
+\chapter{研究方法與核心實作}
+
+\section{使用情境與角色}
+測試工程師負責選擇無線介面、掃描目標並執行測試情境；資安分析人員檢視 WIDS 事件與稽核紀錄，判斷是否觸發告警；審查人員則取得具時間戳與分類之測試證據，用於內部合規審查或對外呈現 UN R155 驗證結果。
+
+\section{功能需求}
 \begin{longtable}{p{0.12\textwidth}p{0.55\textwidth}p{0.22\textwidth}}
 \caption{系統功能需求與對應實作}\label{tab:function-requirements}\\
 \toprule
@@ -119,25 +239,58 @@ F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
 \bottomrule
 \end{longtable}
 
-完整流程為：掃描目標、選定 BSSID、執行基線稽核、選擇授權攻擊情境、啟動 WIDS 觀測、檢視即時事件，以及匯整稽核紀錄。
+\section{開發環境與系統技術棧}
+後端以 Python 3 撰寫，採用 Flask 提供 REST API、Flask-SocketIO（\texttt{async\_mode="threading"}）提供即時通訊；前端為原生 HTML／CSS／JavaScript，透過 \texttt{socket.io} 用戶端函式庫與後端通訊，不依賴額外前端框架，以降低部署複雜度。攻擊情境執行之作業系統、無線網卡型號、監聽模式設定與各工具版本，待於 ARTC 實體測試環境確認後於 5.1 節實驗環境表補齊。
 
-\chapter{研究方法與核心實作}
 \section{自動化合規與組態檢測實作}
-說明 WPS、WPA3／802.1X、PMF、SSID 廣播與用戶端隔離五項檢查的判定規則，以及 PASS、FAIL、WARN、INFO、MANUAL 狀態的意義。
+\texttt{config\_audit.py} 之 \texttt{audit\_target()} 以 \texttt{scan\_networks()} 之被動掃描結果為輸入，比對目標 BSSID 後依序執行五項檢查，並以 PASS／FAIL／WARN／INFO／MANUAL 五種狀態表示結果：
+
+\begin{enumerate}
+  \item \textbf{WPS 停用檢查}：若信標中偵測到 WPS 資訊元素則判定 FAIL，否則 PASS。
+  \item \textbf{WPA3／802.1X 驗證邏輯}：加密欄位為 \texttt{WPA3} 時判定 PASS；為 \texttt{OPEN} 或 \texttt{WPA} 時判定 FAIL；其餘情形（如僅偵測到 RSN 但未能區分 WPA2／WPA3）則判定 WARN，提示應升級至 WPA3 或 802.1X，避免二元判定掩蓋中間風險等級。
+  \item \textbf{PMF（802.11w）強制啟用檢測演算法}：讀取 RSN Capabilities 中之 MFPR（Management Frame Protection Required）／MFPC（Capable）位元，區分「required（PASS）」、「capable（WARN，可選但未強制）」與「未偵測到（FAIL）」三級，對應第三章威脅模型中 PMF 作為第一道防線之判定依據。
+  \item \textbf{SSID 廣播管控與隱藏 SSID 探測}：當掃描結果之 SSID 欄位為空或為預設之 \texttt{<hidden>} 標記時，判定為隱藏 SSID 並提示此僅為「安全假象（security-by-obscurity）」而非有效控制，而非直接判定為缺失，避免常規工具在隱藏 SSID 情境下無法導出有效名稱、進而誤判之問題。
+  \item \textbf{用戶端隔離}：標記為 MANUAL，因被動掃描無法確認同一 AP 下兩個已連線用戶端之間是否可互相通訊，須另以主動 Layer 2 探測（例如 ARP 請求）驗證是否仍可觀察到其他用戶端之 ARP 流量或遭受 ARP 詐騙\cite{mirzoev2012isolation}，避免以被動掃描結果做出過度自信的判定。
+\end{enumerate}
+稽核結果彙整為 FAIL／WARN 統計摘要（\texttt{summary}），供前端與稽核紀錄快速呈現整體風險等級。
 
 \section{主動攻擊模擬腳本實作}
-說明 wifite 自動化稽核、握手擷取、deauthentication、WPS 測試、Rogue AP 與 PMF probe 的測試目的、必要參數、工作狀態與安全限制。
+\texttt{attack\_runner.py} 以情境（scenario）為單位，將六種授權測試情境定義為命令樣板，於執行時以 \texttt{params} 填入必要參數：
+
+\begin{longtable}{p{0.16\textwidth}p{0.30\textwidth}p{0.42\textwidth}}
+\caption{授權攻擊情境與對應工具}\label{tab:scenarios}\\
+\toprule
+情境代碼 & 說明 & 底層命令樣板 \\
+\midrule
+\texttt{wifite\_auto} & wifite2 全自動稽核（握手擷取與破解） & \texttt{wifite --bssid \{bssid\} --channel \{channel\} -i \{interface\} --kill} \\
+\texttt{handshake\_cap} & 僅擷取 4-way handshake，不進行破解 & \texttt{wifite ... --no-crack --no-wps} \\
+\texttt{deauth} & Deauth flood，驗證 PMF／802.11w 防護 & \texttt{aireplay-ng --deauth \{count\} -a \{bssid\} \{interface\}} \\
+\texttt{wps\_bruteforce} & Reaver WPS PIN 暴力破解 & \texttt{reaver -i \{interface\} -b \{bssid\} -c \{channel\}} \\
+\texttt{rogue\_ap} & 架設 Evil Twin（hostapd） & \texttt{hostapd \{config\_path\}} \\
+\texttt{pmf\_probe} & 送出偽造管理訊框，觀測 PMF 拒絕行為 & \texttt{python3 scripts/pmf\_probe.py --iface \{interface\} --bssid \{bssid\}} \\
+\bottomrule
+\end{longtable}
+
+工作管理器（\texttt{AttackRunner}）以 \texttt{job\_id} 追蹤每個工作，狀態機為 \texttt{pending → running → finished／killed／error}；啟動時以獨立執行緒（\texttt{threading.Thread}）執行子行程，逐行讀取 \texttt{stdout} 並經 Socket.IO 以 \texttt{job\_output} 即時串流至前端，結束後以 \texttt{job\_update} 回報最終狀態與 return code。當目標底層工具（如 \texttt{wifite}、\texttt{aireplay-ng}）未安裝於執行環境時，系統自動切換為\textbf{模擬模式}，輸出預先定義之階段性訊息（監聽模式切換、掃描、封包擷取進度），使前端串流管線與工作生命週期可在無實體工具的開發機上完整驗證，並於稽核紀錄中明確標記為模擬輸出。
 
 \section{無線入侵偵測模組（WIDS）開發}
-介紹 Scapy 實體監聽路徑與無 Scapy 時的模擬路徑，並說明 deauth flood、重傳率異常、握手流程異常與 Rogue AP 事件的偵測設計。
+\texttt{wids.py} 於偵測到 Scapy 可用時，以 \texttt{sniff()} 於監聽模式介面上擷取管理訊框；若 Scapy 或監聽模式硬體不可用，則退回模擬事件迴圈，兩者共用相同的事件輸出格式（\texttt{ts}、\texttt{type}、\texttt{message}、\texttt{severity}、\texttt{iface}），確保前端事件面板行為一致。
 
-\section{平台 API、即時通訊與稽核紀錄}
-說明 Flask API、Socket.IO 事件與 JSONL 日誌的資料流，以及測試工作與事件的追溯方式。
+\textbf{大量重傳與偵測邏輯}：目前已實作之 Deauth flood 偵測，以滑動 5 秒時間窗計數 \texttt{Dot11Deauth} 訊框數量，若時間窗內累積超過 20 個訊框，即觸發 \texttt{deauth\_flood} 高嚴重度事件。此設計與既有 802.11 WIDS 文獻中以 deauth 訊框發送速率、訊框大小與訊框間隔作為特徵之簽章式偵測方法一致\cite{sethuraman2019wids}；門檻值本身則為初始設定，尚待第五章實體測試以統計正常網路之背景雜訊率後校準。
 
-\section*{開發環境}
-待補：作業系統、Python 版本、套件版本、無線網卡型號、監聽模式設定與測試工具版本。
+\textbf{惡意熱點辨識演算法}：對應第三章之高信度關聯規則──偵測到 Deauth 突發流量後，若隨即出現「相同 SSID、不同 BSSID」之新 AP，即判定為 Evil Twin 高度可疑特徵並觸發告警；若僅偵測到其一則記錄為一般異常事件。相較於既有研究多採用用戶端側之 DNS 往返時間量測\cite{han2011timingrogueap}判斷是否連上 Rogue AP，本研究之偵測邏輯部署於 WIDS（監聽端）而非受測 T-Box 端，優點是不須修改車機軟體即可監控，但亦因此無法得知車機實際是否已連線至偽造熱點，須與 5.2 節之 Step 5 主動觀測結果交叉比對方能完整判定。此關聯訊號較單獨偵測 Deauth 或 Rogue AP 更具因果證據力，亦是 5.2 節攻擊鏈實驗之核心判定依據。beacon flood、握手異常（如 M2 未先於 M1 出現）等偵測項目目前於模擬迴圈中以合成事件呈現，實體 Scapy 偵測邏輯之特徵擷取仍待第七章未來工作補強。
+
+\section{稽核紀錄與即時通訊}
+\texttt{logger.py}（\texttt{TestLogger}）將所有模組事件以 JSON Lines 格式寫入 \texttt{logs/testing.jsonl}，每筆紀錄包含 \texttt{ts}（Unix 時間戳）、\texttt{level}（INFO／WARN／ERROR）、\texttt{category}（\texttt{scan}／\texttt{audit}／\texttt{attack}／\texttt{wids}）與 \texttt{message} 四個欄位，並以固定長度雙端佇列（\texttt{deque}，預設 2000 筆）快取於記憶體中，供 \texttt{/api/logs} 快速回傳最近事件而不需每次讀檔。JSONL 格式便於後續以行為單位串流處理或匯入其他分析工具，亦符合 UN R155 對測試證據應可追溯、逐筆記錄之精神。Socket.IO 事件則涵蓋 \texttt{job\_update}（工作狀態變化）、\texttt{job\_output}（工作即時輸出）與 \texttt{wids\_event}（WIDS 告警），三者皆廣播至所有已連線之前端用戶端。
+
+\section{可視化測試平台介面設計}
+前端提供兩種檢視模式：\textbf{經典儀表板}（\texttt{index.html}）以分頁呈現「掃描」「組態稽核」「攻擊情境」「WIDS 監控」「日誌」五個功能區塊，供測試人員逐項操作；\textbf{流程檢視}（\texttt{flow.html}）則將 3.3.3 節所述之 AP／Client 雙模式流水線以卡片式介面呈現，依序執行「AP 模式：安全組態檢測 → 進階防護技術檢測」與「Client／Station 模式：WIDS 監聽 → 攻擊模擬與驗證」四個階段，並以進度條與即時日誌串流面板呈現整體執行狀態，使審查人員可於單一畫面掌握完整測試流程與各階段之 PASS／FAIL 結果，此即第五章 5.1 節所稱之「可視化測試平台介面」。
+
+\section{安全與風險控制}
+正式部署前須補上身分驗證與角色型權限控管（測試工程師／分析人員／審查人員三種角色之權限應予區隔）、命令參數驗證（避免使用者輸入之 BSSID、介面名稱等參數被用於命令注入）、測試範圍限制（強制檢查目標是否列於授權清單）、日誌防竄改（如簽章或僅附加寫入）與敏感資料遮罩。所有測試操作必須於隔離網段內、依書面授權之目標執行，此為本平台由原型邁向正式合規工具前之必要前提。
 
 \chapter{實驗設計與成效評估}
+
 \section{實驗環境與設備建置}
 \begin{table}[htbp]
 \centering
@@ -146,16 +299,106 @@ F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
 \toprule
 項目 & 設定 & 待填資料 \\
 \midrule
-測試平台 & ARTC T-BOX／實驗室 AP & 型號、韌體版本 \\
+測試平台 & ARTC T-Box／實驗室 AP & 型號、韌體版本 \\
 測試主機 & Kali／Parrot／其他 & CPU、記憶體、OS \\
 無線介面 & 監聽模式網卡 & 晶片、驅動、介面名稱 \\
 測試工具 & iw、wifite2、aircrack-ng、reaver、Scapy & 版本 \\
+測試場域 & RF 隔離環境（屏蔽箱／電波暗室） & 場域編號、電磁隔離規格 \\
 網路設定 & 測試 SSID、頻道、加密方式 & 去識別化資料 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{實驗情境設計}
+依第三章威脅模型，實驗分為兩個情境，分別對應 AP 模式與 Client／Station 模式之攻擊面。
+
+\subsection{情境一：AP 模式下的合規性防護壓力測試}
+以實驗室 AP 或 T-Box AP 模式為對象，依序執行被動掃描、組態稽核，並以 WPS 暴力破解與握手擷取驗證「WPS 停用」與「強認證」兩項防護是否於壓力測試下維持有效。
+
+\subsection{情境二：Client 模式下的動態誘騙與阻斷攻擊測試}
+以 T-Box Client／Station 模式（連接維修廠內網或公共熱點情境）為對象，執行 4.4 節所述之 Deauth–Evil Twin 整合攻擊鏈，測試流程如下：
+
+\begin{enumerate}
+  \item[\textbf{Step 1}] \textbf{環境偵察與基線建立}：將網卡切換至 Monitor Mode，鎖定目標 AP 之 BSSID、T-Box 端 Client MAC 及運作通道；確認 T-Box 已完成 4-way handshake、處於正常連線狀態，記錄訊號強度與連線參數作為基線。
+  \item[\textbf{Step 2}] \textbf{擷取 PMF 狀態}：自 AP 之 Beacon／Association Response 擷取 RSN Capabilities 欄位，判讀 PMF 為「不支援／Capable（可選）／Required（強制）」，作為預期結果之依據。
+  \item[\textbf{Step 3}] \textbf{架設 Evil Twin 釣魚熱點}：複製目標 SSID，以更強訊號建立釣魚熱點；視測試需要設定為開放式或偽造加密，用以驗證 T-Box 端是否進行伺服器端憑證驗證。
+  \item[\textbf{Step 4}] \textbf{注入 Deauth 訊框}：對目標 Client 發送解除認證訊框，分兩種模式執行──定量模式（發送固定數量，如 100 幀，用於精確重現與比對）與連續模式（持續注入，模擬真實 DoS 壓力情境）。
+  \item[\textbf{Step 5}] \textbf{觀測 T-Box 反應與重連行為}：監控 T-Box 是否斷線，以及斷線後的重連對象──是否因 PMF 生效而未斷線，或斷線後自動關聯至 Evil Twin，抑或因憑證驗證失敗而拒絕連線。
+  \item[\textbf{Step 6}] \textbf{WIDS 偵測驗證}：確認 4.5 節所述偵測模組能否於滑動時間窗內辨識 Deauth 突發流量，並比對來源 MAC 是否為「未完成握手卻發出 Deauth」之偽造來源；同時執行 Evil Twin 高信度關聯偵測。
+  \item[\textbf{Step 7}] \textbf{日誌記錄與結果判定}：匯出全程封包與偵測 LOG，於可視化平台以 Pass／Fail 標示，並保留詳細技術細節供稽核。
+\end{enumerate}
+
+圖 \ref{fig:attackchain} 為此攻擊鏈之流程示意，判定準則彙整於表 \ref{tab:pass-fail}，三道防線與其作用環節則彙整於表 \ref{tab:defense-layers}。
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=6mm and 8mm,
+  stepbox/.style={draw, rounded corners, align=center, minimum width=42mm, minimum height=8mm, font=\scriptsize},
+  dec/.style={draw, diamond, aspect=2.4, align=center, minimum width=42mm, font=\scriptsize, inner sep=1pt},
+  res/.style={draw, rounded corners, align=center, minimum width=30mm, minimum height=7mm, font=\scriptsize},
+  >=Latex
+]
+\node[stepbox] (s1) {Step1 環境偵察與基線建立};
+\node[stepbox, below=of s1] (s2) {Step2 擷取 PMF 狀態};
+\node[stepbox, below=of s2] (s3) {Step3 架設 Evil Twin};
+\node[stepbox, below=of s3] (s4) {Step4 注入 Deauth 訊框};
+\node[dec, below=8mm of s4] (s5) {Step5 是否斷線？};
+\node[res, below left=10mm and 3mm of s5, fill=green!12] (pass1) {PASS：PMF 生效\\攻擊鏈起點中斷};
+\node[dec, below right=10mm and -6mm of s5] (recon) {重連對象判斷};
+\node[res, below=10mm of recon, xshift=-24mm, fill=green!12] (pass2) {PASS：憑證驗證失敗\\拒連 Evil Twin};
+\node[res, below=10mm of recon, xshift=24mm, fill=red!12] (fail) {FAIL：自動關聯\\Evil Twin};
+\node[stepbox, below=26mm of recon] (s6) {Step6 WIDS 偵測驗證};
+\node[stepbox, below=of s6] (s7) {Step7 日誌記錄與結果判定};
+
+\draw[->] (s1) -- (s2);
+\draw[->] (s2) -- (s3);
+\draw[->] (s3) -- (s4);
+\draw[->] (s4) -- (s5);
+\draw[->] (s5) -- node[left,font=\tiny]{未斷線} (pass1);
+\draw[->] (s5) -- node[right,font=\tiny]{斷線並重新搜尋} (recon);
+\draw[->] (recon) -- node[left,font=\tiny]{拒連} (pass2);
+\draw[->] (recon) -- node[right,font=\tiny]{自動關聯} (fail);
+\draw[->] (pass1) |- (s6);
+\draw[->] (pass2) -- (s6);
+\draw[->] (fail) -- (s6);
+\draw[->] (s6) -- (s7);
+\end{tikzpicture}
+\caption{Deauth–Evil Twin 整合攻擊鏈測試流程}
+\label{fig:attackchain}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Deauth--Evil Twin 攻擊鏈判定準則}
+\label{tab:pass-fail}
+\begin{tabular}{p{0.14\textwidth}p{0.40\textwidth}p{0.34\textwidth}}
+\toprule
+結果 & 條件 & 資安意義 \\
+\midrule
+PASS & PMF（802.11w）阻擋 Deauth 使 T-Box 未斷線；或雖斷線但因 WPA3／802.1X 憑證驗證失敗而拒連 Evil Twin & 攻擊鏈於起點或導向環節即被中斷 \\
+FAIL & T-Box 遭成功斷線並自動關聯至 Evil Twin & 存在被強制斷線並導向惡意伺服器之風險，須補強 802.11w 與伺服器端驗證 \\
+WIDS PASS & 偵測模組成功告警並匯出日誌 & 具備主動偵測與稽核能量 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{三道防線與其作用環節}
+\label{tab:defense-layers}
+\begin{tabular}{p{0.10\textwidth}p{0.26\textwidth}p{0.50\textwidth}}
+\toprule
+防線 & 機制 & 作用環節 \\
+\midrule
+第一道 & PMF（802.11w） & 攻擊鏈起點阻擋 Deauth，使 T-Box 根本不被斷線 \\
+第二道 & WPA3／802.1X 伺服器端驗證 & Evil Twin 無法提供合法憑證而遭拒（最主要之防禦） \\
+第三道 & Client 端組態 & 避免僅憑 SSID 名稱自動加入未知網路 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{實驗案例與觀測指標}
 \begin{table}[htbp]
 \centering
 \caption{實驗案例與觀測指標}
@@ -163,52 +406,96 @@ F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
 \toprule
 案例 & 目的 & 主要觀測結果 \\
 \midrule
-E-01 & 被動掃描 & 發現數、解析正確率、耗時 \\
-E-02 & 組態稽核 & PASS／FAIL／WARN 一致性 \\
-E-03 & PMF／deauth & 事件數、偵測延遲、連線影響 \\
-E-04 & Rogue AP & 告警正確性、誤報 \\
-E-05 & 握手流程 & 成功率、耗時、紀錄完整性 \\
-E-06 & 稽核追溯 & 時間戳、分類、工作 ID 關聯 \\
+E-01 & 被動掃描（情境一） & 發現數、解析正確率、耗時 \\
+E-02 & 組態稽核（情境一） & PASS／FAIL／WARN 一致性 \\
+E-03 & PMF／Deauth（情境二 Step 1--5） & 事件數、偵測延遲、連線影響 \\
+E-04 & Rogue AP／Evil Twin 關聯（情境二 Step 3--6） & 告警正確性、誤報 \\
+E-05 & 握手流程（情境一／二共用） & 成功率、耗時、紀錄完整性 \\
+E-06 & 稽核追溯（情境一／二共用） & 時間戳、分類、工作 ID 關聯 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{評估指標}
-評估面向包含功能正確性、偵測延遲、召回率、精確率、誤報率、掃描耗時、API 回應時間、同時工作數、資源使用量與稽核紀錄完整性。
+評估面向包含：功能正確性、WIDS 偵測延遲（攻擊發生至可視化平台告警之時間差）、偵測召回率與精確率、Evil Twin 關聯規則之誤報率、掃描耗時、API 回應時間、同時工作數、資源使用量，以及合規性驗證結果──即 T-Box 於遭受攻擊時，PMF 與 Client Isolation 成功阻擋威脅之數據證明（對應表 \ref{tab:pass-fail} 之 PASS 比例）與稽核紀錄完整性。
 
-\section{實驗結果與效能分析}
-待填入實體測試表格、統計圖、封包或日誌截圖。必須分別標示真實硬體結果與模擬資料，不得以 stub 輸出作為實體網路效能結論。
+\section{實驗結果與分析}
+待填入實體測試表格、統計圖、封包或日誌截圖，並依表 \ref{tab:pass-fail}、\ref{tab:defense-layers} 之準則彙整各案例之 PASS／FAIL／WIDS PASS 結果。分析時必須分別標示真實硬體結果與模擬資料，不得以 4.4 節所述之模擬輸出作為實體網路效能結論。
 
 \chapter{討論}
+
 \section{研究成果對 UN R155 合規性之貢獻}
-逐項回應第一章研究目的，並以第三章功能需求及第五章實驗結果作為證據。
+本平台將 UN R155 所要求之「風險評估—驗證測試—證據留存」流程具體化為可重複執行的軟體工具：第三章之威脅模型對應風險評估階段，第四章之自動化稽核與攻擊情境對應驗證測試階段，第四章 4.6 節之 JSONL 稽核紀錄則對應證據留存階段，三者串接成一條可追溯的合規證據鏈，可作為車廠或測試機構準備型式認證資料之原型工具。
+
+\section{研究成果與需求對照}
+逐項回應第一章之研究目的：威脅分類模型見第三章 3.2 節；自動化測試腳本與 WIDS 見第四章 4.4--4.6 節；可視化平台見第四章 4.8 節；授權測試驗證見第五章實驗設計，惟量化結果仍待補充。
 
 \section{測試框架之侷限性與挑戰}
-目前外部工具輸出尚未完整結構化，WIDS 多數事件仍為骨架或模擬輸出，且尚未具備角色型身分驗證、正式報告匯出、日誌防竄改與集中管理機制。
+現階段限制包括：外部工具輸出尚未完整結構化（例如 wifite2 之輸出仍以原始文字串流呈現，未解析為結構化欄位）；WIDS 多數事件仍為骨架或模擬輸出，beacon flood 與握手異常偵測器尚待實作；系統尚未具備角色型身分驗證、正式報告匯出與日誌防竄改機制。此外，在極高頻寬流量下是否存在封包遺失導致偵測漏報之問題，以及框架對未公開零日漏洞之偵測能力，皆屬本方法論之固有限制，須於未來工作中以壓力測試與定期規則更新機制因應。
 
 \section{合規與實務應用意義}
-本平台可作為 UN R155／ISO/SAE 21434 測試證據產生工具的原型，但仍需由組織流程、風險分析、權限控管與正式審查補足完整合規要求。
+本平台可作為 UN R155／ISO-SAE 21434 測試證據產生工具的原型，但仍需由組織流程、供應鏈風險分析、權限控管與正式審查補足完整合規要求；平台本身僅能證明「特定測試情境下之技術防護有效性」，無法取代組織層級之資安管理制度。
 
-\chapter{結論與未來展望}
+\chapter{結論與未來工作}
+
 \section{研究總結}
-本研究完成一套車聯網 Wi-Fi 資安測試平台原型，將掃描、組態稽核、授權測試、WIDS 監控與稽核紀錄整合至單一 Web 流程。正式結論待完成實體測試後，加入量化數據與限制條件。
+本研究以威脅建模為核心，針對 T-Box 之 AP 與 Client／Station 兩種 Wi-Fi 運作模式界定攻擊面，並以此為基礎完成一套整合掃描、組態稽核、授權攻擊測試、WIDS 監控與稽核紀錄之 Web 化車載 Wi-Fi 資安測試平台原型；並提出具因果關係之 Deauth–Evil Twin 整合攻擊鏈與對應之三道防線判定準則，作為驗證 PMF、WPA3／802.1X 與用戶端組態防護有效性之具體測試情境。正式結論待完成實體測試後，加入量化數據與限制條件。
 
 \section{未來工作}
 \begin{enumerate}
-  \item 完成 wifite2、封包擷取檔與測試結果的結構化解析。
-  \item 補充 DragonBlood、降級攻擊與真實 deauth reason-code 分類。
-  \item 完成 beacon flood、握手異常及 Rogue AP 的 Scapy 偵測器。
-  \item 加入角色型身分驗證、權限控管與安全命令參數驗證。
-  \item 建立 PDF／UN R155 證據包匯出與報告模板。
-  \item 於 ARTC T-BOX 測試台進行多版本韌體、多種加密設定與重複樣本驗證。
+  \item 完成 wifite2、封包擷取檔與測試結果的結構化解析，取代目前之原始文字輸出。
+  \item 補充 DragonBlood\cite{vanhoef2020dragonblood}、KRACK\cite{vanhoef2017krack} 等已知降級與旁通道攻擊之測試腳本，以及真實 deauth reason-code 分類。
+  \item 完成 beacon flood、握手異常及 Rogue AP 的 Scapy 偵測器，並以實體測試數據校準 WIDS 門檻值（如 5 秒時間窗之 deauth 計數閾值）。
+  \item 加入角色型身分驗證、權限控管與安全命令參數驗證，強化測試範圍限制。
+  \item 建立 PDF／UN R155 證據包匯出與報告模板，並實作日誌防竄改機制。
+  \item 於 ARTC T-Box 測試台進行多版本韌體、多種加密設定與重複樣本驗證，補齊第五章之量化實驗結果。
+  \item 整合長程無線（Cellular／5G）與其他短程無線（藍牙）之檢測，並探討由 Wi-Fi 端點突破後，針對車內 CAN 匯流排進行防護與阻斷之整合性研究。
 \end{enumerate}
 
-\nocite{*}
 \bibliographystyle{plain}
 \bibliography{references}
 
 \appendix
 \chapter{API 與日誌欄位}
-此附錄待補 API 請求／回應、JSONL 欄位定義、測試授權確認表及實驗截圖。
+
+\section{REST API 一覽}
+\begin{longtable}{p{0.10\textwidth}p{0.24\textwidth}p{0.56\textwidth}}
+\caption{系統 REST API 端點}\\
+\toprule
+方法 & 路徑 & 說明 \\
+\midrule
+GET & \texttt{/api/interfaces} & 列出主機上可用之無線介面 \\
+POST & \texttt{/api/scan} & 被動掃描鄰近 AP（\texttt{interface}、\texttt{duration}） \\
+POST & \texttt{/api/audit} & 對指定 \texttt{bssid} 執行基線安全組態稽核 \\
+POST & \texttt{/api/attack/start} & 啟動指定攻擊情境（\texttt{scenario}、\texttt{params}），回傳 \texttt{job\_id} \\
+POST & \texttt{/api/attack/stop} & 依 \texttt{job\_id} 停止執行中之攻擊工作 \\
+GET & \texttt{/api/attack/jobs} & 列出所有攻擊工作及其狀態 \\
+POST & \texttt{/api/wids/start} & 啟動 WIDS 監控（\texttt{interface}） \\
+POST & \texttt{/api/wids/stop} & 停止 WIDS 監控 \\
+GET & \texttt{/api/logs} & 取得最近 \texttt{limit} 筆稽核紀錄 \\
+\bottomrule
+\end{longtable}
+
+\section{Socket.IO 事件}
+\begin{itemize}
+  \item \texttt{job\_update}：攻擊工作狀態變化（\texttt{job\_id}、\texttt{scenario}、\texttt{cmd}、\texttt{status}、\texttt{started\_at}、\texttt{ended\_at}、\texttt{return\_code}）。
+  \item \texttt{job\_output}：攻擊工作即時輸出（\texttt{job\_id}、\texttt{line}）。
+  \item \texttt{wids\_event}：WIDS 告警事件（\texttt{ts}、\texttt{type}、\texttt{message}、\texttt{severity}、\texttt{iface}）。
+\end{itemize}
+
+\section{JSONL 稽核紀錄欄位定義}
+\begin{longtable}{p{0.18\textwidth}p{0.72\textwidth}}
+\caption{\texttt{logs/testing.jsonl} 欄位定義}\\
+\toprule
+欄位 & 說明 \\
+\midrule
+\texttt{ts} & Unix 時間戳（秒，浮點數） \\
+\texttt{level} & 事件等級：\texttt{INFO}／\texttt{WARN}／\texttt{ERROR} \\
+\texttt{category} & 事件分類：\texttt{scan}／\texttt{audit}／\texttt{attack}／\texttt{wids} \\
+\texttt{message} & 事件內容描述 \\
+\bottomrule
+\end{longtable}
+
+此附錄待補：測試授權確認表、實驗截圖，以及正式報告匯出格式（PDF／UN R155 證據包）之欄位規劃。
 
 \end{document}

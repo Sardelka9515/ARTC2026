@@ -1,5 +1,10 @@
 \begin{thebibliography}{10}
 
+\bibitem{augustyniak2026eviltwin}
+Piotr Augustyniak and Piotr Zwierzykowski.
+\newblock Evil twin attack in wi-fi networks: Evolution, mutation taxonomy, and exposure time analysis (2005--2026).
+\newblock {\em Electronics}, 15(15):3432, 2026.
+
 \bibitem{boumiza2017intrusion}
 S.~Boumiza and R.~Braham.
 \newblock Intrusion threats and security solutions for autonomous vehicle networks.
@@ -13,6 +18,11 @@ S.~Checkoway, D.~McCoy, B.~Kantor, D.~Anderson, H.~Shacham, S.~Savage, K.~Kosche
 \bibitem{dennemeyer2025mobility}
 {Dennemeyer}.
 \newblock Software solutions for automotive: Cybersecurity in mobility, 2025.
+
+\bibitem{han2011timingrogueap}
+Hao Han, Bo~Sheng, Chiu~C. Tan, Qun Li, and Sanglu Lu.
+\newblock A timing-based scheme for rogue ap detection.
+\newblock {\em IEEE Transactions on Parallel and Distributed Systems}, 22(11):1912--1925, 2011.
 
 \bibitem{ieee80211}
 {IEEE Standards Association}.
@@ -28,26 +38,56 @@ K.~Koscher, A.~Czeskis, F.~Roesner, S.~Patel, T.~Kohno, S.~Checkoway, D.~McCoy, 
 \newblock Experimental security analysis of a modern automobile.
 \newblock In {\em 2010 IEEE Symposium on Security and Privacy}, pages 447--462. IEEE Computer Society, 2010.
 
+\bibitem{luo2022automotive}
+Feng Luo, Xuan Zhang, Zhenyu Yang, Yifan Jiang, Jiajia Wang, Mingzhi Wu, and Wanqiang Feng.
+\newblock Cybersecurity testing for automotive domain: A survey.
+\newblock {\em Sensors}, 22(23):9211, 2022.
+
 \bibitem{ma2022telematics}
 Chao Ma, Hao Zhao, and Tong Wang.
 \newblock Research on cyber security risk of telematics box in intelligent connected vehicle.
 \newblock {\em MATEC Web of Conferences}, 355:03030, 2022.
+
+\bibitem{marksteiner2019automation}
+Stefan Marksteiner and Zhendong Ma.
+\newblock Approaching the automation of cyber security testing of connected vehicles.
+\newblock In {\em Proceedings of the Third Central European Cybersecurity Conference (CECC 2019)}. ACM, 2019.
 
 \bibitem{miller2015vehicle}
 C.~Miller and C.~Valasek.
 \newblock Remote exploitation of an unaltered passenger vehicle.
 \newblock Black Hat USA, 2015.
 
-\bibitem{sun2023automotive}
-Y.~Sun et~al.
-\newblock Cybersecurity testing for automotive domain: A survey.
-\newblock {\em IEEE Access}, 2023.
-\newblock 作者完整名單與卷期頁碼待補.
+\bibitem{mirzoev2012isolation}
+Timur Mirzoev and Stacey White.
+\newblock The role of client isolation in protecting wi-fi users from arp spoofing attacks.
+\newblock {\em i-managers Journal on Information Technology}, 1(2), 2012.
+\newblock Also available as arXiv:1404.2172.
+
+\bibitem{sethuraman2019wids}
+Sibi~Chakkaravarthy Sethuraman, Sangeetha Dhamodaran, and Vaidehi Vijayakumar.
+\newblock Intrusion detection system for detecting wireless attacks in ieee 802.11 networks.
+\newblock {\em IET Networks}, 8(4):219--232, 2019.
 
 \bibitem{unr155}
 {United Nations Economic Commission for Europe}.
 \newblock Un regulation no. 155: Uniform provisions concerning the approval of vehicles with regards to cyber security and cyber security management system, 2021.
-\newblock Annex 5；正式引用版本待確認.
+\newblock Annex 5.
+
+\bibitem{vanhoef2017krack}
+Mathy Vanhoef and Frank Piessens.
+\newblock Key reinstallation attacks: Forcing nonce reuse in wpa2.
+\newblock In {\em Proceedings of the 2017 ACM SIGSAC Conference on Computer and Communications Security (CCS)}, pages 1313--1328, 2017.
+
+\bibitem{vanhoef2020dragonblood}
+Mathy Vanhoef and Eyal Ronen.
+\newblock Dragonblood: Analyzing the dragonfly handshake of wpa3 and eap-pwd.
+\newblock In {\em 2020 IEEE Symposium on Security and Privacy (SP)}, pages 517--533. IEEE, 2020.
+
+\bibitem{viehbock2011wps}
+Stefan Viehb{\"o}ck.
+\newblock Brute forcing wi-fi protected setup: When poor design meets poor implementation, 2011.
+\newblock Whitepaper, 26 December 2011.
 
 \bibitem{cht2022iso21434}
 {中華電信研究院}.
