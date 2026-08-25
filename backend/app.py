@@ -123,7 +123,8 @@ def api_attack_jobs():
 def api_wids_start():
     data = request.get_json() or {}
     iface = data.get("interface", "wlan0mon")
-    wids.start(iface)
+    baseline = data.get("baseline")  # optional trusted [{bssid, ssid, channel}]
+    wids.start(iface, baseline=baseline)
     return jsonify({"ok": True})
 
 

@@ -327,40 +327,88 @@ async function runAdvancedProtection() {
 }
 
 // Client/Station 模式 · a. 主動防禦與異常偵測 (WIDS)
+// Two-branch Evil-Twin detection (report slide 11):
+//   fingerprint  普通模仿 SSID（BSSID 白名單 / 頻道 / 指紋）
+//   mac_layer    模仿 BSSID(MAC)（Sequence / TSF）
+//   behavioral   行為分析（RSSI 突增 / Deauth 導向）
+//   dos          大量重傳 / 非法握手 / Deauth flood
+const WIDS_CATS = {
+  fingerprint: { label: "指紋", en: "SSID-Clone" },
+  mac_layer: { label: "MAC 層", en: "MAC-Spoof" },
+  behavioral: { label: "行為", en: "Behavioral" },
+  dos: { label: "DoS", en: "DoS/Integrity" },
+};
+
+// Compact human-readable evidence line from an event's evidence dict.
+function widsEvidence(e) {
+  const v = e.evidence || {};
+  if (e.type === "seq_anomaly") return `序號 ${v.seq_prev}→${v.seq_now}（Δ${v.delta}）`;
+  if (e.type === "tsf_collision") return `TSF 偏移 ${v.drift_us}µs`;
+  if (e.type === "rssi_spike") return `RSSI ${v.rssi_prev}→${v.rssi_now} dBm`;
+  if (e.type === "rogue_channel") return `頻道 ch${v.observed_channel}（應 ch${v.expected_channel}）`;
+  if (e.type === "evil_twin") return `觀測 BSSID ${v.observed_bssid}（合法 ${(v.expected_bssid || []).join(",")}）`;
+  if (e.type === "fingerprint_mismatch")
+    return `IE 期望[${(v.ie_order_expected || []).join(",")}] 觀測[${(v.ie_order_observed || []).join(",")}]`;
+  if (e.type === "deauth_flood") return `${v.count} 幀/${v.window_s}s reason=${v.reason_code}`;
+  if (e.type === "deauth_redirect") return `原 ${v.home_bssid} → 雙子 ${v.twin_bssid}`;
+  if (e.type === "retrans_spike") return `重傳比 ${Math.round((v.ratio || 0) * 100)}%`;
+  if (e.type === "handshake_bad") return `收到 M${v.observed_msg} 缺 M${v.expected_msg}`;
+  return "";
+}
+
 function runWids() {
   return new Promise(async (resolve) => {
-    const WINDOW_MS = 7000;
+    const WINDOW_MS = 8000;
     log(`Client 模式｜啟動 WIDS 監聽 ${ctx.iface}（${WINDOW_MS / 1000}s）…`, "info");
-    const d = await postJSON("/api/wids/start", { interface: ctx.iface });
+
+    // Feed the scan stage's discovered APs as the trusted baseline (BSSID whitelist).
+    const baseline = (ctx.networks || []).map(n => ({
+      bssid: n.bssid, ssid: n.ssid, channel: n.channel,
+    }));
+    if (baseline.length) log(`  白名單基準：${baseline.length} 個受信任 AP。`, "info");
+
+    const d = await postJSON("/api/wids/start", { interface: ctx.iface, baseline });
     if (!d.ok)
       return resolve({ ok: false, summary: "WIDS 啟動失敗", errBody: `<pre>無法啟動監聽模組。</pre>` });
 
-    let events = 0, high = 0, rogue = 0, retrans = 0;
+    let events = 0, high = 0;
+    const cat = { fingerprint: 0, mac_layer: 0, behavioral: 0, dos: 0 };
+    const findings = [];   // notable (non-baseline) events for the err-panel
     const onEvt = (e) => {
       events++;
+      if (e.category in cat) cat[e.category]++;
       if (e.severity === "high") high++;
-      if (e.type.includes("rogue")) rogue++;
-      if (e.type.includes("retrans") || e.type.includes("handshake")) retrans++;
       const lvl = e.severity === "high" ? "fail" : e.severity === "medium" ? "warn" : "info";
-      log(`  [${e.severity.toUpperCase()}] ${e.type} — ${e.message}`, lvl);
+      const ev = widsEvidence(e);
+      log(`  [${(WIDS_CATS[e.category] || {}).label || e.category}] ${e.type} — ${e.message}`
+        + (ev ? `｜${ev}` : ""), lvl);
+      if (e.category !== "baseline" && e.severity !== "info") {
+        const chip = e.severity === "high" ? "fail" : "warn";
+        findings.push({ type: e.type, html: `<div class="det">
+          <span class="dn"><b>[${(WIDS_CATS[e.category] || {}).label || e.category}]</b> ${escapeHtml(e.message)}${ev ? ` — <i>${escapeHtml(ev)}</i>` : ""}</span>
+          <span class="chip ${chip}">${escapeHtml(e.type)}</span></div>` });
+      }
     };
     socket.on("wids_event", onEvt);
 
     setTimeout(async () => {
       socket.off("wids_event", onEvt);
       await postJSON("/api/wids/stop", {});
-      log(`WIDS 停止。共 ${events} 事件，重傳/握手 ${retrans}，惡意熱點 ${rogue}，高危 ${high}。`,
-        high ? "warn" : "ok");
+      const brk = `指紋 ${cat.fingerprint} · MAC層 ${cat.mac_layer} · 行為 ${cat.behavioral} · DoS ${cat.dos}`;
+      log(`WIDS 停止。共 ${events} 事件（${brk}），高危 ${high}。`, high ? "warn" : "ok");
       if (high) {
+        // one row per detection type (scenario loops), keep first-seen order
+        const seen = new Set();
+        const rows = findings.filter(r => (seen.has(r.type) ? false : seen.add(r.type)))
+          .map(r => r.html).join("");
         resolve({
           ok: true, warn: true,
-          summary: `${events} 事件 · ${high} 高危`,
-          errTitle: `偵測到 ${high} 項高危入侵事件`,
-          errBody: `<pre>於 ${WINDOW_MS / 1000}s 監聽視窗內偵測到 ${high} 項高危事件` +
-            `（重傳/非法握手 ${retrans}，惡意/釣魚熱點 ${rogue}）。詳見下方日誌。</pre>`,
+          summary: `${events} 事件 · ${brk}`,
+          errTitle: `偵測到 ${high} 項高危入侵事件（Evil Twin 兩分支）`,
+          errBody: rows || `<pre>詳見下方日誌。</pre>`,
         });
       } else {
-        resolve({ ok: true, summary: `${events} 事件 · 無高危` });
+        resolve({ ok: true, summary: `${events} 事件 · ${brk} · 無高危` });
       }
     }, WINDOW_MS);
   });
