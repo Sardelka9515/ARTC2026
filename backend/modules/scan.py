@@ -28,7 +28,8 @@ def list_interfaces():
 def scan_networks(iface="wlan0", duration=10):
     """
     Passive scan for nearby APs.
-    Returns a list of dicts: { bssid, ssid, channel, signal, encryption, wps }
+    Returns dicts containing bssid, ssid, channel, signal, encryption, wps,
+    and pmf.
 
     Strategy:
       1. `iw dev <iface> scan` — works when the interface is in *managed* mode.
@@ -123,16 +124,16 @@ def _scapy_scan(iface, duration=8):
                 try:
                     if getattr(rsn, "mfp_required", 0):
                         n["pmf"] = "required"
-                    elif getattr(rsn, "mfp_capable", 0):
+                    elif getattr(rsn, "mfp_capable", 0) and n["pmf"] != "required":
                         n["pmf"] = "capable"
                 except Exception:
                     pass
 
         if sae:
             n["encryption"] = "WPA3"
-        elif has_rsn:
+        elif has_rsn and n["encryption"] != "WPA3":
             n["encryption"] = "WPA2/WPA3"
-        elif has_wpa:
+        elif has_wpa and n["encryption"] == "OPEN":
             n["encryption"] = "WPA"
 
         if n["channel"] is None:
@@ -153,26 +154,60 @@ def _scapy_scan(iface, duration=8):
 def _parse_iw_scan(text):
     nets = []
     current = None
+
+    def finish_current():
+        if not current:
+            return
+        auth = current.pop("_auth_suites", set())
+        has_rsn = current.pop("_has_rsn", False)
+        has_wpa = current.pop("_has_wpa", False)
+
+        if has_rsn:
+            if "SAE" in auth and ("PSK" in auth or any(a.startswith("802.1X") for a in auth)):
+                current["encryption"] = "WPA3-Transition"
+            elif "SAE" in auth or "OWE" in auth:
+                current["encryption"] = "WPA3"
+            elif any(a.startswith("802.1X") for a in auth):
+                current["encryption"] = "WPA2-Enterprise"
+            elif "PSK" in auth:
+                current["encryption"] = "WPA2"
+            else:
+                current["encryption"] = "WPA2/WPA3"
+        elif has_wpa:
+            current["encryption"] = "WPA"
+
+    def set_pmf(value):
+        # `iw` may print both capability and requirement markers.  Required is
+        # the stronger state and must never be overwritten by a later line.
+        rank = {"unknown": 0, "capable": 1, "required": 2}
+        if rank[value] > rank[current["pmf"]]:
+            current["pmf"] = value
+
     for line in text.splitlines():
         line = line.rstrip()
-        m = re.match(r"BSS ([0-9a-f:]{17})", line)
+        m = re.match(r"BSS ([0-9a-fA-F:]{17})", line)
         if m:
             if current:
+                finish_current()
                 nets.append(current)
             current = {
-                "bssid": m.group(1),
+                "bssid": m.group(1).lower(),
                 "ssid": "",
                 "channel": None,
                 "signal": None,
                 "encryption": "OPEN",
                 "wps": False,
                 "pmf": "unknown",
+                "_has_rsn": False,
+                "_has_wpa": False,
+                "_auth_suites": set(),
             }
             continue
         if not current:
             continue
-        if "SSID:" in line:
-            current["ssid"] = line.split("SSID:", 1)[1].strip() or "<hidden>"
+        ssid = re.match(r"\s*SSID:\s*(.*)$", line)
+        if ssid:
+            current["ssid"] = ssid.group(1).strip() or "<hidden>"
         elif "signal:" in line:
             sig = re.search(r"-?\d+\.\d+", line)
             if sig:
@@ -182,18 +217,29 @@ def _parse_iw_scan(text):
             if ch:
                 current["channel"] = int(ch.group(1))
         elif "RSN:" in line:
-            current["encryption"] = "WPA2/WPA3"
-        elif "WPA:" in line and current["encryption"] == "OPEN":
-            current["encryption"] = "WPA"
+            current["_has_rsn"] = True
+        elif "WPA:" in line:
+            current["_has_wpa"] = True
         elif "WPS:" in line:
             current["wps"] = True
-        elif "SAE" in line:
-            current["encryption"] = "WPA3"
-        elif "MFPR" in line or "Management frame protection required" in line:
-            current["pmf"] = "required"
-        elif "MFPC" in line:
-            current["pmf"] = "capable"
+        elif "Authentication suites:" in line:
+            suites = line.split("Authentication suites:", 1)[1]
+            if re.search(r"(?:^|\s)(?:FT/)?SAE(?:\s|$)", suites):
+                current["_auth_suites"].add("SAE")
+            if re.search(r"(?:^|\s)(?:FT/)?PSK(?:\s|$)", suites):
+                current["_auth_suites"].add("PSK")
+            if re.search(r"(?:^|\s)OWE(?:\s|$)", suites):
+                current["_auth_suites"].add("OWE")
+            for suite in re.findall(r"802\.1X(?:/SHA-(?:256|384))?", suites):
+                current["_auth_suites"].add(suite)
+        elif ("MFPR" in line
+              or "MFP-required" in line
+              or "Management frame protection required" in line):
+            set_pmf("required")
+        elif "MFPC" in line or "MFP-capable" in line:
+            set_pmf("capable")
     if current:
+        finish_current()
         nets.append(current)
     return nets
 
