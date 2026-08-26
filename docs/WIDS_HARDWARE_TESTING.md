@@ -299,3 +299,38 @@ dmesg shows the healthy path: `entered promiscuous mode` when capture starts.
 
 Runner scripts on `cp712`: `~/wids-aic8800/11_tx_rx_test.sh` (controlled TX/RX),
 `8_run_wids_integration.sh` (drives real `backend/modules/wids.py`).
+
+## 13. Live attack-detection demo (end-to-end, in the web UI) — WORKS
+
+Confirmed the full WIDS chain in the running Flask app (launched as **root** so
+scapy capture is real, not the simulated fallback):
+
+**Setup (two on-board adapters, no extra hardware needed):**
+- **Realtek RTL8821CU** (`wlx90de80e1832b`) = WIDS monitor (app `/api/wids/start`).
+- **AIC8800DC** (`wlxec750c0bb89d`) = attack injector. *Surprise result:* although
+  the FullMAC AIC delivers **nothing** in monitor RX, its monitor **TX works** —
+  `scapy sendp` of raw deauth frames on the AIC iface transmits fine, and the
+  Realtek captures them. **Caveat: this AIC injection is INTERMITTENT** — it succeeded on several runs (deauth_flood fired) but failed on others (parallel sniff saw 0 of 40 injected frames) even with both cards confirmed on ch6, after repeated managed↔monitor toggling. FullMAC monitor TX is not a dependable injector; for a reliable/repeatable demo use a dedicated mac80211 injection adapter (e.g. AR9271 / ath9k_htc) as the attacker.
+
+**Procedure:** app running WIDS on the Realtek → run
+`~/wids-aic8800/inject_deauth_from_aic.sh` (AIC → monitor ch6, inject 40 deauth
+from fake BSSID `DE:AD:BE:EF:00:01`). WIDS raises **`deauth_flood`** (HIGH/dos) in
+the Audit Log / WIDS panel. Real ambient `seq_anomaly` and `rssi_spike` events also
+appear from nearby devices → the detectors are running on real RF.
+
+**App run note:** deps for root — `sudo apt install -y python3-flask
+python3-flask-socketio` (scapy is already system `python3-scapy`); the stale
+Windows `.venv` in the repo is unused on Linux. Launch: `sudo python3 backend/app.py`.
+
+## 14. Detector fixes / tuning notes from the live run
+
+- **`deauth_flood` debounce (fixed):** the DoSDetector emitted one event per frame
+  once past threshold (20→80 spam per burst). Now emits **one alert per flood
+  episode**, re-arming only after the sliding window falls back below threshold.
+  Unit-tested: 80-frame burst → 1 event; second burst after the window clears → 1.
+- **`seq_anomaly` on multi-BSSID APs (known false positive, not yet fixed):** MACs
+  differing only in the locally-administered bit (e.g. `10:27:F5:81:48:26` vs
+  `16:27:F5:81:48:26`) are one radio advertising multiple BSSIDs off a shared
+  sequence counter; per-BSSID sequence tracking then sees interleaved counters as a
+  "second transmitter". A future tuning pass could group locally-administered MAC
+  siblings or widen the rollback tolerance before flagging.

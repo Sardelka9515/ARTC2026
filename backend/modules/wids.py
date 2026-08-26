@@ -241,6 +241,7 @@ class DoSDetector:
 
     def __init__(self):
         self.deauth_window = []          # timestamps
+        self.deauth_flood_active = False # debounce: one event per flood episode
         self.data_total = 0
         self.data_retry = 0
         self.eapol_seen = {}             # bssid -> highest handshake msg observed in order
@@ -258,12 +259,18 @@ class DoSDetector:
             n = len(self.deauth_window)
             if n >= DEAUTH_FLOOD_THRESHOLD:
                 state["deauth_burst"] = (now, obs.ssid, bssid)
-                out.append(_ev("deauth_flood",
-                               f"{n} 個 Deauth／{DEAUTH_FLOOD_WINDOW_S}s"
-                               + (f"（reason {obs.reason_code}）" if obs.reason_code is not None else "")
-                               + f" 來源 {bssid}", "high", "dos", obs,
-                               {"count": n, "window_s": DEAUTH_FLOOD_WINDOW_S,
-                                "reason_code": obs.reason_code}))
+                # Debounce: emit a single alert when the flood starts, not one
+                # per frame. Re-arms only after the window falls below threshold.
+                if not self.deauth_flood_active:
+                    self.deauth_flood_active = True
+                    out.append(_ev("deauth_flood",
+                                   f"{n} 個 Deauth／{DEAUTH_FLOOD_WINDOW_S}s"
+                                   + (f"（reason {obs.reason_code}）" if obs.reason_code is not None else "")
+                                   + f" 來源 {bssid}", "high", "dos", obs,
+                                   {"count": n, "window_s": DEAUTH_FLOOD_WINDOW_S,
+                                    "reason_code": obs.reason_code}))
+            elif self.deauth_flood_active and n < DEAUTH_FLOOD_THRESHOLD:
+                self.deauth_flood_active = False   # episode ended → re-arm
 
         # Retransmission ratio over baseline.
         if obs.fc_type == 2:
