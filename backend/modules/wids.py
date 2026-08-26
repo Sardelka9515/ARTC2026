@@ -330,6 +330,12 @@ class WIDSMonitor:
 
     # ---- dispatch ----------------------------------------------------------
     def _dispatch(self, obs):
+        # Ignore broadcast/undirected frames (e.g. probe requests carry the
+        # broadcast BSSID) — bucketing many distinct transmitters under
+        # FF:FF:FF:FF:FF:FF produces spurious seq/RSSI anomalies. WIDS keys on
+        # real per-AP identity, so only dispatch AP-addressed observations.
+        if not obs.bssid or obs.bssid == "FF:FF:FF:FF:FF:FF":
+            return
         for det in self._detectors:
             try:
                 for evt in det.feed(obs, self._state):
