@@ -31,12 +31,16 @@ async function loadInterfaces() {
   try {
     const r = await fetch("/api/interfaces");
     const d = await r.json();
-    const sel = $("#scan-iface");
-    sel.innerHTML = "";
-    d.interfaces.forEach(i => {
-      const o = document.createElement("option");
-      o.value = i; o.textContent = i;
-      sel.appendChild(o);
+    // populate every interface picker (Scan + WIDS) from the live list
+    ["#scan-iface", "#wids-iface"].forEach(id => {
+      const sel = $(id);
+      if (!sel) return;
+      sel.innerHTML = "";
+      (d.interfaces || []).forEach(i => {
+        const o = document.createElement("option");
+        o.value = i; o.textContent = i;
+        sel.appendChild(o);
+      });
     });
   } catch (e) { console.error(e); }
 }
