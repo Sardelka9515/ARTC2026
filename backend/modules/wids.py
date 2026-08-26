@@ -15,17 +15,25 @@ Implements the two-branch WIDS design from the mid-term report
 Plus DoSDetector for the broader spec items (slides 5/7/10):
 mass retransmission, illegal 4-way handshake, deauth flood.
 
-Convention (see scan.py / attack_runner.py): use scapy monitor-mode
-capture when available; otherwise run a scripted Evil-Twin scenario
-through the *same* detectors so the pipeline can be demoed without
-monitor-mode hardware.
+Capture is real-only: startup fails when the selected interface cannot be
+placed in monitor mode or opened for raw packet capture.  The WIDS must never
+replace failed capture with synthetic security events.
 """
 import threading
 import time
+import re
+import shutil
+import socket
+import subprocess
 from dataclasses import dataclass, field
 
 # ---- tunable detection thresholds (field-tunable) --------------------------
-SEQ_JUMP_TOLERANCE = 300         # max plausible signed seq delta between frames of one BSSID
+SEQ_JUMP_TOLERANCE = 300         # minimum raw backward jump worth tracking
+SEQ_ANOMALY_WINDOW_S = 10        # require repeated jumps inside this window
+SEQ_ANOMALY_THRESHOLD = 3        # one out-of-order/missed frame is not an intrusion
+SEQ_ANOMALY_COOLDOWN_S = 30      # prevent repeated alerts for the same transmitter
+SEQ_ROLLOVER_HIGH = 3584         # normal 4095 -> 0 rollover guard band
+SEQ_ROLLOVER_LOW = 512
 TSF_DRIFT_BOUND_US = 2_000_000   # 2 s: TSF divergence beyond this ⇒ a second radio
 RSSI_SPIKE_DBM = 15              # sudden RSSI change (dBm) for a "stable" BSSID
 DEAUTH_FLOOD_WINDOW_S = 5
@@ -34,13 +42,10 @@ DEAUTH_REDIRECT_WINDOW_S = 8     # reconnect-to-twin must follow a burst within 
 RETRANS_RATIO_THRESHOLD = 0.20   # retry-flagged data ratio over baseline
 RETRANS_MIN_SAMPLES = 25         # data frames per retransmission evaluation
 
-# Trusted baseline mirrors scan._stub_results() so the whitelist is meaningful
-# even without a live scan feeding it in.
-DEFAULT_BASELINE = [
-    {"bssid": "AA:BB:CC:11:22:33", "ssid": "ARTC-TBOX-Test", "channel": 6},
-    {"bssid": "AA:BB:CC:44:55:66", "ssid": "Vehicle-Guest", "channel": 11},
-    {"bssid": "AA:BB:CC:77:88:99", "ssid": "OTA-Secure", "channel": 36},
-]
+# An empty baseline still enables sequence, TSF, RSSI, deauth, retry, and EAPOL
+# detectors. Evil-Twin whitelist/fingerprint checks activate only when the UI
+# supplies an explicitly trusted scan baseline; no fictional APs are injected.
+DEFAULT_BASELINE = []
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +55,7 @@ class FrameObservation:
     fc_type: int = 0             # 0=mgmt 1=ctrl 2=data
     subtype: int = 0             # 8=Beacon 5=ProbeResp 12=Deauth ...
     bssid: str = ""
+    transmitter: str = ""       # 802.11 TA (addr2); sequence counters belong to a transmitter
     ssid: str = ""
     channel: int = None
     seq: int = None              # 0..4095 sequence number
@@ -154,29 +160,52 @@ class MacSpoofDetector:
     """Right branch — BSSID/MAC spoof, via 802.11 low-level invariants."""
 
     def __init__(self):
-        self.last_seq = {}    # bssid -> last seq
+        self.last_seq = {}    # (bssid, transmitter) -> last management seq
+        self.seq_anomalies = {}  # key -> timestamps of corroborating backward jumps
+        self.seq_last_alert = {} # key -> last alert timestamp (debounce)
         self.last_tsf = {}    # bssid -> (tsf, wall_clock)
 
     def feed(self, obs, state):
-        if obs.fc_type == 2 and not obs.is_deauth:  # skip bulk data for seq (noisy)
-            pass
+        # AP-spoof sequence analysis is meaningful only on AP-originated
+        # advertisements. Data frames mix independent client/QoS sequence spaces
+        # and were the main source of false HIGH alerts in real monitor captures.
+        if obs.fc_type != 0 or obs.subtype not in (8, 5) or obs.retry:
+            return []
         bssid = (obs.bssid or "").upper()
         if not bssid:
             return []
+        transmitter = (obs.transmitter or bssid).upper()
+        key = (bssid, transmitter)
         out = []
 
-        # Sequence-number jump: two radios sharing one BSSID interleave counters,
-        # producing a backward jump larger than any single-radio gap.
+        # Sequence-number evidence: use raw backward movement, not the shortest
+        # signed modular delta. For example 475 -> 3926 is forward progress with
+        # missed frames, not a -645 jump. Ignore a normal 4095 -> 0 rollover and
+        # require multiple jumps before emitting one MEDIUM-confidence event.
         if obs.seq is not None:
-            prev = self.last_seq.get(bssid)
+            prev = self.last_seq.get(key)
             if prev is not None:
-                signed = ((obs.seq - prev + 2048) % 4096) - 2048
-                if signed < -SEQ_JUMP_TOLERANCE:
-                    out.append(_ev("seq_anomaly",
-                                   f"{bssid} 序號回跳 {prev}→{obs.seq}（Δ{signed}，疑似第二台發射機）",
-                                   "high", "mac_layer", obs,
-                                   {"seq_prev": prev, "seq_now": obs.seq, "delta": signed}))
-            self.last_seq[bssid] = obs.seq
+                raw_delta = obs.seq - prev
+                rollover = prev >= SEQ_ROLLOVER_HIGH and obs.seq <= SEQ_ROLLOVER_LOW
+                if raw_delta < -SEQ_JUMP_TOLERANCE and not rollover:
+                    now = time.time()
+                    hits = self.seq_anomalies.setdefault(key, [])
+                    hits.append(now)
+                    hits[:] = [t for t in hits if now - t <= SEQ_ANOMALY_WINDOW_S]
+                    last_alert = self.seq_last_alert.get(key, 0)
+                    if (len(hits) >= SEQ_ANOMALY_THRESHOLD
+                            and now - last_alert >= SEQ_ANOMALY_COOLDOWN_S):
+                        self.seq_last_alert[key] = now
+                        out.append(_ev(
+                            "seq_anomaly",
+                            f"{bssid} 在 {SEQ_ANOMALY_WINDOW_S}s 內出現 {len(hits)} 次序號回跳"
+                            f"（最近 {prev}→{obs.seq}，需與 TSF／指紋證據交叉確認）",
+                            "medium", "mac_layer", obs,
+                            {"seq_prev": prev, "seq_now": obs.seq,
+                             "delta": raw_delta, "count": len(hits),
+                             "window_s": SEQ_ANOMALY_WINDOW_S,
+                             "transmitter": transmitter}))
+            self.last_seq[key] = obs.seq
 
         # TSF collision: a real AP's µs timer advances monotonically with wall time;
         # a spoofing radio cannot mirror it.
@@ -309,11 +338,161 @@ class WIDSMonitor:
         self._iface = None
         self._detectors = []
         self._state = {}
+        self._status_lock = threading.Lock()
+        self._status = self._new_status()
+        self._original_type = None
+        self._changed_type = False
 
-    def start(self, iface, baseline=None):
+    @staticmethod
+    def _new_status(**updates):
+        value = {
+            "state": "stopped", "iface": None, "channel": None,
+            "capture_source": None, "frames": 0, "last_frame_ts": None,
+            "error": None,
+        }
+        value.update(updates)
+        return value
+
+    @staticmethod
+    def list_interfaces():
+        """Return real wireless interfaces only; never return demo placeholders."""
+        if shutil.which("iw") is None:
+            return []
+        try:
+            result = subprocess.run(
+                ["iw", "dev"], capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return []
+            return re.findall(r"^\s*Interface\s+(\S+)", result.stdout, re.MULTILINE)
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+    def status(self):
+        with self._status_lock:
+            return dict(self._status)
+
+    def _set_status(self, **updates):
+        with self._status_lock:
+            self._status.update(updates)
+            current = dict(self._status)
+        try:
+            self.socketio.emit("wids_status", current, namespace="/")
+        except Exception:
+            pass
+        return current
+
+    @staticmethod
+    def _run_command(command):
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=10,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Required command not found: {command[0]}") from exc
+        except subprocess.SubprocessError as exc:
+            raise RuntimeError(f"Command failed: {' '.join(command)}: {exc}") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip() or f"exit {result.returncode}"
+            raise RuntimeError(f"{' '.join(command)}: {detail}")
+        return result.stdout
+
+    def _prepare_interface(self, iface, channel):
+        if iface not in self.list_interfaces():
+            raise RuntimeError(f"Wireless interface '{iface}' was not found")
+        if shutil.which("ip") is None or shutil.which("iw") is None:
+            raise RuntimeError("The ip and iw commands are required")
+
+        info = self._run_command(["iw", "dev", iface, "info"])
+        match = re.search(r"^\s*type\s+(\S+)", info, re.MULTILINE)
+        if not match:
+            raise RuntimeError(f"Could not determine the mode of '{iface}'")
+        self._original_type = match.group(1)
+        self._changed_type = self._original_type != "monitor"
+
+        if self._changed_type:
+            self._run_command(["ip", "link", "set", iface, "down"])
+            try:
+                self._run_command(["iw", "dev", iface, "set", "type", "monitor"])
+            finally:
+                # Bring the adapter back up even when the mode change fails.
+                self._run_command(["ip", "link", "set", iface, "up"])
+        else:
+            self._run_command(["ip", "link", "set", iface, "up"])
+
+        if channel is not None:
+            self._run_command(["iw", "dev", iface, "set", "channel", str(channel)])
+
+        verified = self._run_command(["iw", "dev", iface, "info"])
+        if not re.search(r"^\s*type\s+monitor\s*$", verified, re.MULTILINE):
+            raise RuntimeError(f"'{iface}' did not enter monitor mode")
+        active_channel = re.search(r"^\s*channel\s+(\d+)", verified, re.MULTILINE)
+        return int(active_channel.group(1)) if active_channel else channel
+
+    @staticmethod
+    def _verify_capture_access(iface):
+        try:
+            from scapy.all import sniff  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError("Scapy is not installed; real WIDS capture cannot start") from exc
+
+        # Opening a raw packet socket catches missing CAP_NET_RAW/root permission
+        # synchronously, before the API tells the dashboard that WIDS is running.
+        try:
+            probe = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+            try:
+                probe.bind((iface, 0))
+            finally:
+                probe.close()
+        except (OSError, PermissionError) as exc:
+            raise RuntimeError(f"Cannot capture on '{iface}': {exc}") from exc
+
+    def _restore_interface(self):
+        if not self._changed_type or not self._iface or not self._original_type:
+            return None
+        try:
+            self._run_command(["ip", "link", "set", self._iface, "down"])
+            self._run_command(
+                ["iw", "dev", self._iface, "set", "type", self._original_type]
+            )
+            self._run_command(["ip", "link", "set", self._iface, "up"])
+            return None
+        except RuntimeError as exc:
+            return str(exc)
+        finally:
+            self._changed_type = False
+
+    def start(self, iface, baseline=None, channel=None):
         if self._running:
-            return
+            return {"ok": False, "error": "WIDS is already running", "status": self.status()}
+        iface = (iface or "").strip()
+        if not iface:
+            return {"ok": False, "error": "A wireless interface is required", "status": self.status()}
+        if channel in (None, ""):
+            channel = None
+        else:
+            try:
+                channel = int(channel)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Channel must be a number", "status": self.status()}
+            if not 1 <= channel <= 233:
+                return {"ok": False, "error": "Channel must be between 1 and 233", "status": self.status()}
+
         self._iface = iface
+        self._set_status(**self._new_status(state="starting", iface=iface, channel=channel,
+                                            capture_source="real"))
+        try:
+            active_channel = self._prepare_interface(iface, channel)
+            self._verify_capture_access(iface)
+        except Exception as exc:
+            restore_error = self._restore_interface()
+            message = str(exc)
+            if restore_error:
+                message += f"; interface restore also failed: {restore_error}"
+            self.logger.error("wids", f"WIDS failed to start on {iface}: {message}")
+            status = self._set_status(state="error", error=message)
+            return {"ok": False, "error": message, "status": status}
+
         self._running = True
         self._state = {}
         base = baseline or DEFAULT_BASELINE
@@ -330,10 +509,17 @@ class WIDSMonitor:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         self.logger.info("wids", f"WIDS started on {iface} (baseline: {len(norm)} trusted AP)")
+        status = self._set_status(state="running", channel=active_channel, error=None)
+        return {"ok": True, "status": status}
 
     def stop(self):
         self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2)
+        restore_error = self._restore_interface()
         self.logger.info("wids", "WIDS stopped")
+        status = self._set_status(state="stopped", error=restore_error)
+        return {"ok": restore_error is None, "error": restore_error, "status": status}
 
     # ---- dispatch ----------------------------------------------------------
     def _dispatch(self, obs):
@@ -352,10 +538,15 @@ class WIDSMonitor:
 
     def _loop(self):
         try:
-            from scapy.all import sniff, Dot11  # noqa: F401
             self._scapy_loop()
-        except Exception:
-            self._simulated_loop()
+        except Exception as exc:
+            self._running = False
+            message = f"Real capture stopped: {exc}"
+            restore_error = self._restore_interface()
+            if restore_error:
+                message += f"; interface restore also failed: {restore_error}"
+            self.logger.error("wids", message)
+            self._set_status(state="error", error=message)
 
     # ---- real capture ------------------------------------------------------
     def _scapy_loop(self):
@@ -367,14 +558,18 @@ class WIDSMonitor:
                 return True
             if not pkt.haslayer(Dot11):
                 return
+            with self._status_lock:
+                self._status["frames"] += 1
+                self._status["last_frame_ts"] = time.time()
             try:
                 self._dispatch(self._parse(pkt, Dot11, Dot11Beacon, Dot11ProbeResp,
                                            Dot11Deauth, Dot11Elt, RadioTap, EAPOL))
             except Exception:
                 pass
 
-        sniff(iface=self._iface, prn=handler, store=False,
-              stop_filter=lambda p: not self._running)
+        # A short timeout makes Stop responsive even on a quiet/deaf adapter.
+        while self._running:
+            sniff(iface=self._iface, prn=handler, store=False, timeout=1)
 
     @staticmethod
     def _parse(pkt, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Deauth,
@@ -383,6 +578,7 @@ class WIDSMonitor:
         obs = FrameObservation(
             fc_type=int(d.type), subtype=int(d.subtype),
             bssid=(d.addr3 or d.addr2 or "").upper(),
+            transmitter=(d.addr2 or "").upper(),
             retry=bool(int(d.FCfield) & 0x08),
         )
         if d.SC is not None:
@@ -442,83 +638,6 @@ class WIDSMonitor:
         except Exception:
             pass
         return None
-
-    # ---- simulated capture (scripted Evil-Twin scenario) -------------------
-    def _simulated_loop(self):
-        """
-        Drive a scripted Evil-Twin timeline through the *real* detectors so the
-        UI demonstrates every slide-11 detection without monitor-mode hardware.
-        """
-        LEGIT = "AA:BB:CC:11:22:33"
-        TWIN_SSID = "AA:BB:CC:11:22:33"  # MAC-spoof twin reuses the real BSSID
-        CLONE_BSSID = "DE:AD:BE:EF:00:01"  # SSID-clone twin on a fresh BSSID
-        SSID = "ARTC-TBOX-Test"
-        good_ie = [0, 1, 3, 45, 48, 221]
-        good_vendor = ["00:50:f2"]
-        seq = 1000
-
-        while self._running:
-            # (1) baseline — a few legit beacons establish the learned fingerprint.
-            for _ in range(3):
-                if not self._running:
-                    return
-                seq += 3
-                self._dispatch(FrameObservation(
-                    fc_type=0, subtype=8, bssid=LEGIT, ssid=SSID, channel=6,
-                    seq=seq, tsf=123_456_789_000 + seq, rssi=-60,
-                    ie_order=list(good_ie), vendor_tags=list(good_vendor),
-                    ht_vht_he=b"\x2d\x1a"))
-                self._sleep(0.6)
-
-            # (2) SSID clone on a new BSSID with a reordered IE fingerprint.
-            self._dispatch(FrameObservation(
-                fc_type=0, subtype=8, bssid=CLONE_BSSID, ssid=SSID, channel=6,
-                seq=40, tsf=500_000_000, rssi=-38,
-                ie_order=[0, 3, 1, 221, 45, 48, 221],
-                vendor_tags=["00:50:f2", "de:ad:be"], ht_vht_he=b"\x2d\x00"))
-            self._sleep(0.8)
-
-            # (3) MAC-spoof twin: reuses the real BSSID → seq回跳 + TSF衝突 + RSSI突增 + 指紋不符.
-            self._dispatch(FrameObservation(
-                fc_type=0, subtype=8, bssid=TWIN_SSID, ssid=SSID, channel=6,
-                seq=42, tsf=500_000_000, rssi=-30,
-                ie_order=[0, 3, 1, 221, 45, 48],
-                vendor_tags=["de:ad:be"], ht_vht_he=b"\x2d\xff"))
-            self._sleep(0.8)
-
-            # (4) Deauth burst against the real AP (arms the redirect check).
-            for _ in range(DEAUTH_FLOOD_THRESHOLD + 4):
-                if not self._running:
-                    return
-                self._dispatch(FrameObservation(
-                    fc_type=0, subtype=12, bssid=LEGIT, ssid=SSID,
-                    is_deauth=True, reason_code=7))
-            self._sleep(0.5)
-
-            # (5) Reconnect-to-twin right after the burst → deauth_redirect.
-            self._dispatch(FrameObservation(
-                fc_type=0, subtype=8, bssid=CLONE_BSSID, ssid=SSID, channel=6,
-                seq=44, rssi=-31, ie_order=[0, 3, 1, 221, 45, 48, 221],
-                vendor_tags=["00:50:f2", "de:ad:be"]))
-            self._sleep(0.8)
-
-            # (6) Retransmission spike — high retry ratio over the sample window.
-            for i in range(RETRANS_MIN_SAMPLES):
-                if not self._running:
-                    return
-                self._dispatch(FrameObservation(
-                    fc_type=2, bssid=LEGIT, retry=(i % 3 != 0)))  # ~66% retries
-
-            # (7) Illegal handshake — M2 without a preceding M1.
-            self._dispatch(FrameObservation(
-                fc_type=2, bssid=LEGIT, is_eapol=True, eapol_msg=2))
-            self._sleep(1.5)
-
-    def _sleep(self, secs):
-        """Interruptible sleep so stop() takes effect promptly."""
-        end = time.time() + secs
-        while self._running and time.time() < end:
-            time.sleep(0.05)
 
     # ---- emit --------------------------------------------------------------
     def _emit_event(self, evt):

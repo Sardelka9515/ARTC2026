@@ -76,20 +76,20 @@ sudo docs/testing-scripts/7_monitor_test_rtl.sh   # scapy sniff; expect beacons/
 
 ## Phase 3 — WIDS engine on real capture (headless)
 
-Runs the actual `WIDSMonitor` against the monitor interface, with a guard that
-flags the silent simulated-fallback:
+Runs the actual `WIDSMonitor` against the monitor interface. Startup now fails
+explicitly if real monitor-mode capture cannot be opened:
 
 ```bash
 sudo docs/testing-scripts/8_run_wids_integration.sh
 ```
 
-**Expected:** `VERDICT: WIDS_REAL_CAPTURE_OK`, `fell_back_to_simulated: False`,
-nonzero `real_frames_dispatched`.
+**Expected:** `VERDICT: WIDS_REAL_CAPTURE_OK` and nonzero
+`real_frames_dispatched`.
 
 ## Phase 4 — Web UI
 
 ```bash
-cd <repo> && sudo python3 backend/app.py        # MUST be root, or capture silently simulates
+cd <repo> && sudo python3 backend/app.py        # root/CAP_NET_RAW+CAP_NET_ADMIN required
 ```
 
 Open `http://localhost:5000` → **WIDS Monitor** tab → set interface to

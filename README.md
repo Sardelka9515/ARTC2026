@@ -3,10 +3,10 @@
 Web-based UI skeleton for the NCU CSIE × ARTC project
 **「車聯網資安測試技術研究」** (115年度 / UN R155 compliance).
 
-This is a starting scaffold — all backend modules gracefully fall back
-to simulated output when the underlying tools (`wifite2`, `aircrack-ng`,
-`reaver`, `hostapd`, `scapy`) are not present, so you can develop the UI
-on any machine and deploy to the Kali/Parrot test bench later.
+This is a starting scaffold. Attack scenarios can still provide development
+fallback output when their external tools are unavailable. WIDS is deliberately
+real-capture-only: it reports a startup error instead of manufacturing security
+events when monitor-mode capture is unavailable.
 
 ## Architecture
 

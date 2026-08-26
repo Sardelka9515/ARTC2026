@@ -218,6 +218,24 @@ button.danger { background: #3c1f24; border-color: var(--fail); color: var(--fai
 }
 
 /* WIDS */
+.wids-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.wids-status strong { min-width: 78px; }
+.wids-status span { color: var(--muted); }
+.wids-status.state-running strong { color: var(--ok); }
+.wids-status.state-starting strong { color: var(--warn); }
+.wids-status.state-error { border-color: var(--fail); }
+.wids-status.state-error strong { color: var(--fail); }
+button:disabled { opacity: .5; cursor: not-allowed; }
 .events {
   background: var(--panel);
   border: 1px solid var(--border);

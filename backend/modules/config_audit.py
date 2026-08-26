@@ -8,7 +8,19 @@ Checks implemented (per project requirements):
   4. SSID broadcast policy
   5. Client isolation hint (cannot be detected passively; flagged as manual)
 """
+import re
+
 from .scan import scan_networks
+
+
+def _is_hidden_ssid(ssid):
+    value = (ssid or "").strip()
+    return (
+        not value
+        or value == "<hidden>"
+        or set(value) == {"\x00"}
+        or re.fullmatch(r"(\\x00)+", value) is not None
+    )
 
 
 def audit_target(iface, bssid):
@@ -38,6 +50,11 @@ def audit_target(iface, bssid):
     enc = target.get("encryption", "OPEN")
     if enc == "WPA3":
         add("Strong auth (WPA3 / 802.1X)", "PASS", "WPA3-SAE in use.")
+    elif enc == "WPA2-Enterprise":
+        add("Strong auth (WPA3 / 802.1X)", "PASS", "802.1X authentication in use.")
+    elif enc == "WPA3-Transition":
+        add("Strong auth (WPA3 / 802.1X)", "WARN",
+            "WPA3 transition mode detected; WPA2 clients may still connect.")
     elif enc in ("OPEN", "WPA"):
         add("Strong auth (WPA3 / 802.1X)", "FAIL",
             f"Weak/none encryption: {enc}")
@@ -55,10 +72,11 @@ def audit_target(iface, bssid):
         add("PMF (802.11w)", "FAIL", "PMF not advertised.")
 
     # 4. SSID broadcast
-    hidden = target.get("ssid", "") in ("", "<hidden>")
-    add("SSID broadcast policy", "INFO",
-        "Hidden SSID (security-by-obscurity; not a strong control)." if hidden
-        else f"SSID broadcast: {target['ssid']}")
+    ssid = target.get("ssid", "")
+    hidden = _is_hidden_ssid(ssid)
+    add("SSID broadcast policy", "PASS" if hidden else "INFO",
+        "SSID is hidden/not broadcast."
+        if hidden else f"SSID is broadcast as: {ssid}")
 
     # 5. Client isolation — needs active probing
     add("Client isolation", "MANUAL",

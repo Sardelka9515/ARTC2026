@@ -3,8 +3,9 @@
 **Date:** 2026-08-25/26
 **Goal:** Test the WIDS implementation (`backend/modules/wids.py`) on real hardware.
 WIDS needs a wireless interface in **monitor mode** so scapy can sniff 802.11
-management frames (deauth floods, beacons, rogue APs). Without monitor mode the
-module silently falls back to `_simulated_loop()` (synthetic events).
+management frames (deauth floods, beacons, rogue APs). The current implementation
+reports startup failure when real capture is unavailable; it does not generate
+synthetic WIDS events.
 
 ---
 
@@ -303,7 +304,7 @@ Runner scripts on `cp712`: `~/wids-aic8800/11_tx_rx_test.sh` (controlled TX/RX),
 ## 13. Live attack-detection demo (end-to-end, in the web UI) — WORKS
 
 Confirmed the full WIDS chain in the running Flask app (launched as **root** so
-scapy capture is real, not the simulated fallback):
+Scapy has real raw-capture access):
 
 **Setup (two on-board adapters, no extra hardware needed):**
 - **Realtek RTL8821CU** (`wlx90de80e1832b`) = WIDS monitor (app `/api/wids/start`).
