@@ -22,7 +22,12 @@ STATIC_DIR = os.path.join(BASE_DIR, "frontend", "static")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 app.config["SECRET_KEY"] = "iov-wifi-sec-dev-key"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+# manage_session=False: this app keeps no Flask session state, and enabling it
+# triggers a flask-socketio/Flask 3.x incompatibility ("property 'session' of
+# 'RequestContext' object has no setter") that crashes the Socket.IO connect
+# handler and blocks all live event pushes to the UI.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
+                    manage_session=False)
 
 # ---- singletons -------------------------------------------------------------
 logger = TestLogger(os.path.join(BASE_DIR, "logs"))
