@@ -196,16 +196,28 @@ $("#wids-stop").addEventListener("click", async () => {
   await fetch("/api/wids/stop", { method: "POST" });
 });
 
+const WIDS_CAT_LABEL = {
+  fingerprint: "指紋", mac_layer: "MAC層", behavioral: "行為",
+  dos: "DoS", baseline: "基準",
+};
+function widsEvidenceStr(evt) {
+  const v = evt.evidence || {};
+  const keys = Object.keys(v);
+  if (!keys.length) return "";
+  return keys.slice(0, 3).map(k => `${k}=${Array.isArray(v[k]) ? `[${v[k].join(",")}]` : v[k]}`).join("  ");
+}
 socket.on("wids_event", (evt) => {
   const box = $("#wids-events");
   const ts = new Date(evt.ts * 1000).toLocaleTimeString();
+  const ev = widsEvidenceStr(evt);
   const row = document.createElement("div");
   row.className = "event";
   row.innerHTML = `
     <span class="ts">${ts}</span>
-    <span class="type">${evt.type}</span>
+    <span class="chip info">${escapeHtml(WIDS_CAT_LABEL[evt.category] || evt.category || "")}</span>
+    <span class="type">${escapeHtml(evt.type)}</span>
     <span class="sev-${evt.severity}">${evt.severity.toUpperCase()}</span>
-    <span>${escapeHtml(evt.message)}</span>`;
+    <span>${escapeHtml(evt.message)}${ev ? ` <span class="evi">${escapeHtml(ev)}</span>` : ""}</span>`;
   box.prepend(row);
   while (box.children.length > 200) box.removeChild(box.lastChild);
 });

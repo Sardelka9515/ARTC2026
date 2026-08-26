@@ -29,19 +29,125 @@ def scan_networks(iface="wlan0", duration=10):
     """
     Passive scan for nearby APs.
     Returns a list of dicts: { bssid, ssid, channel, signal, encryption, wps }
+
+    Strategy:
+      1. `iw dev <iface> scan` — works when the interface is in *managed* mode.
+      2. If that yields nothing (e.g. the interface is in *monitor* mode, where
+         `iw scan` is unsupported), fall back to a passive scapy beacon sniff so
+         the *same monitor interface* used for WIDS also serves discovery.
+      3. If neither works (no hardware / no scapy), return a stub dataset so the
+         dashboard still renders.
     """
-    # Prefer `iw` for a quick scan (does not require monitor mode).
-    if shutil.which("iw") is None:
-        return _stub_results()
+    if shutil.which("iw") is not None:
+        try:
+            r = subprocess.run(
+                ["iw", "dev", iface, "scan"],
+                capture_output=True, text=True, timeout=duration + 5
+            )
+            nets = _parse_iw_scan(r.stdout)
+            if nets:
+                return nets
+        except Exception:
+            pass
+
+    # monitor-mode / iw-scan-failed path: passive scapy beacon sniff
+    nets = _scapy_scan(iface, duration)
+    if nets:
+        return nets
+    return _stub_results()
+
+
+def _scapy_scan(iface, duration=8):
+    """Passive AP discovery by sniffing beacons/probe-responses (monitor mode)."""
+    try:
+        from scapy.all import (sniff, Dot11, Dot11Beacon, Dot11ProbeResp,
+                               Dot11Elt, RadioTap)
+    except Exception:
+        return []
+    try:
+        from scapy.layers.dot11 import Dot11EltRSN
+    except Exception:
+        Dot11EltRSN = None
+
+    nets = {}
+
+    def handle(pkt):
+        if not (pkt.haslayer(Dot11Beacon) or pkt.haslayer(Dot11ProbeResp)):
+            return
+        d = pkt.getlayer(Dot11)
+        bssid = (d.addr3 or "").lower()
+        if not bssid or bssid == "ff:ff:ff:ff:ff:ff":
+            return
+        n = nets.setdefault(bssid, {
+            "bssid": bssid, "ssid": "", "channel": None, "signal": None,
+            "encryption": "OPEN", "wps": False, "pmf": "unknown",
+        })
+        try:
+            n["signal"] = int(pkt.dBm_AntSignal)
+        except Exception:
+            pass
+
+        has_rsn = has_wpa = sae = False
+        el = pkt.getlayer(Dot11Elt)
+        while isinstance(el, Dot11Elt):
+            idn = int(el.ID)
+            if idn == 0:  # SSID
+                try:
+                    s = el.info.decode(errors="ignore")
+                except Exception:
+                    s = ""
+                n["ssid"] = s if s else "<hidden>"
+            elif idn == 3 and el.info:  # DS Parameter set → channel
+                n["channel"] = el.info[0]
+            elif idn == 48:  # RSN
+                has_rsn = True
+            elif idn == 221 and el.info:  # vendor specific
+                info = bytes(el.info)
+                if info[:3] == b"\x00\x50\xf2" and len(info) > 3:
+                    if info[3] == 1:
+                        has_wpa = True          # Microsoft WPA IE
+                    elif info[3] == 4:
+                        n["wps"] = True         # WPS IE
+            el = el.payload.getlayer(Dot11Elt)
+
+        # richer RSN parse (AKM=SAE → WPA3, PMF capability) if scapy exposes it
+        if Dot11EltRSN is not None:
+            rsn = pkt.getlayer(Dot11EltRSN)
+            if rsn is not None:
+                has_rsn = True
+                try:
+                    if any(getattr(s, "suite", None) == 8 for s in rsn.akm_suites):
+                        sae = True              # AKM 8 = SAE (WPA3)
+                except Exception:
+                    pass
+                try:
+                    if getattr(rsn, "mfp_required", 0):
+                        n["pmf"] = "required"
+                    elif getattr(rsn, "mfp_capable", 0):
+                        n["pmf"] = "capable"
+                except Exception:
+                    pass
+
+        if sae:
+            n["encryption"] = "WPA3"
+        elif has_rsn:
+            n["encryption"] = "WPA2/WPA3"
+        elif has_wpa:
+            n["encryption"] = "WPA"
+
+        if n["channel"] is None:
+            try:
+                freq = int(pkt[RadioTap].ChannelFrequency)
+                if 2412 <= freq <= 2484:
+                    n["channel"] = 14 if freq == 2484 else (freq - 2407) // 5
+            except Exception:
+                pass
 
     try:
-        r = subprocess.run(
-            ["iw", "dev", iface, "scan"],
-            capture_output=True, text=True, timeout=duration + 5
-        )
-        return _parse_iw_scan(r.stdout)
+        sniff(iface=iface, prn=handle, timeout=duration, store=False)
     except Exception:
-        return _stub_results()
+        return []
+    return list(nets.values())
 
 
 def _parse_iw_scan(text):
