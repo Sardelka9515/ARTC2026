@@ -127,16 +127,28 @@ def api_attack_jobs():
 @app.route("/api/wids/start", methods=["POST"])
 def api_wids_start():
     data = request.get_json() or {}
-    iface = data.get("interface", "wlan0mon")
+    iface = data.get("interface", "")
+    channel = data.get("channel")
     baseline = data.get("baseline")  # optional trusted [{bssid, ssid, channel}]
-    wids.start(iface, baseline=baseline)
-    return jsonify({"ok": True})
+    result = wids.start(iface, baseline=baseline, channel=channel)
+    return jsonify(result), (200 if result["ok"] else 400)
 
 
 @app.route("/api/wids/stop", methods=["POST"])
 def api_wids_stop():
-    wids.stop()
-    return jsonify({"ok": True})
+    result = wids.stop()
+    return jsonify(result), (200 if result["ok"] else 500)
+
+
+@app.route("/api/wids/status", methods=["GET"])
+def api_wids_status():
+    return jsonify({"ok": True, "status": wids.status()})
+
+
+@app.route("/api/wids/interfaces", methods=["GET"])
+def api_wids_interfaces():
+    """List real wireless interfaces; unlike scan, this never returns stubs."""
+    return jsonify({"interfaces": wids.list_interfaces()})
 
 
 @app.route("/api/logs", methods=["GET"])

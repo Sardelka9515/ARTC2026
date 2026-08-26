@@ -417,9 +417,15 @@ function runWids() {
     }));
     if (baseline.length) log(`  白名單基準：${baseline.length} 個受信任 AP。`, "info");
 
-    const d = await postJSON("/api/wids/start", { interface: ctx.iface, baseline });
+    const d = await postJSON("/api/wids/start", {
+      interface: ctx.iface, channel: ctx.channel, baseline,
+    });
     if (!d.ok)
-      return resolve({ ok: false, summary: "WIDS 啟動失敗", errBody: `<pre>無法啟動監聽模組。</pre>` });
+      return resolve({
+        ok: false,
+        summary: "WIDS 啟動失敗",
+        errBody: `<pre>${escapeHtml(d.error || "無法啟動真實監聽模組。")}</pre>`,
+      });
 
     let events = 0, high = 0;
     const cat = { fingerprint: 0, mac_layer: 0, behavioral: 0, dos: 0 };

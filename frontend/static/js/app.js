@@ -42,6 +42,29 @@ async function loadInterfaces() {
 }
 loadInterfaces();
 
+async function loadWidsInterfaces() {
+  const sel = $("#wids-iface");
+  sel.innerHTML = '<option value="">Loading…</option>';
+  try {
+    const r = await fetch("/api/wids/interfaces");
+    const d = await r.json();
+    sel.innerHTML = "";
+    if (!d.interfaces.length) {
+      sel.innerHTML = '<option value="">No wireless interfaces found</option>';
+      return;
+    }
+    d.interfaces.forEach(i => {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = i;
+      sel.appendChild(o);
+    });
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to list interfaces</option>';
+  }
+}
+loadWidsInterfaces();
+
 // ---- SCAN -----------------------------------------------------------------
 $("#scan-btn").addEventListener("click", async () => {
   const iface = $("#scan-iface").value;
@@ -188,16 +211,69 @@ socket.on("job_update", (job) => {
 });
 
 // ---- WIDS -----------------------------------------------------------------
+function renderWidsStatus(status) {
+  const box = $("#wids-status");
+  const state = status.state || "stopped";
+  const stateLabel = state === "error" ? "FAILED" : state.toUpperCase();
+  box.className = `wids-status state-${state}`;
+  const details = [];
+  if (status.iface) details.push(status.iface);
+  if (status.channel) details.push(`channel ${status.channel}`);
+  if (state === "running") {
+    details.push("REAL RF");
+    details.push(`${status.frames || 0} frames`);
+    details.push(status.last_frame_ts
+      ? `last packet ${new Date(status.last_frame_ts * 1000).toLocaleTimeString()}`
+      : "waiting for first packet");
+  }
+  if (status.error) details.push(status.error);
+  box.innerHTML = `<strong>${escapeHtml(stateLabel)}</strong><span>${escapeHtml(details.join(" · ") || "Not running")}</span>`;
+  $("#wids-start").disabled = state === "starting" || state === "running";
+  $("#wids-stop").disabled = state !== "starting" && state !== "running";
+}
+
+async function refreshWidsStatus() {
+  try {
+    const r = await fetch("/api/wids/status");
+    const d = await r.json();
+    if (d.ok) renderWidsStatus(d.status);
+  } catch (_) { /* Socket connection indicator already reports backend loss. */ }
+}
+
+$("#wids-refresh").addEventListener("click", loadWidsInterfaces);
 $("#wids-start").addEventListener("click", async () => {
-  await fetch("/api/wids/start", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ interface: $("#wids-iface").value }),
-  });
+  const iface = $("#wids-iface").value;
+  if (!iface) return renderWidsStatus({state: "error", error: "Select a wireless interface."});
+  renderWidsStatus({state: "starting", iface});
+  try {
+    const r = await fetch("/api/wids/start", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        interface: iface,
+        channel: $("#wids-channel").value,
+      }),
+    });
+    const d = await r.json();
+    renderWidsStatus(d.status || {state: "error", error: d.error || "Failed to start"});
+    if (!d.ok) return;
+    $("#wids-events").innerHTML = '<p class="empty">Listening for real 802.11 frames…</p>';
+  } catch (e) {
+    renderWidsStatus({state: "error", iface, error: `Failed to start: ${e.message}`});
+  }
 });
 $("#wids-stop").addEventListener("click", async () => {
-  await fetch("/api/wids/stop", { method: "POST" });
+  try {
+    const r = await fetch("/api/wids/stop", { method: "POST" });
+    const d = await r.json();
+    renderWidsStatus(d.status || {state: "stopped"});
+  } catch (e) {
+    renderWidsStatus({state: "error", error: `Failed to stop: ${e.message}`});
+  }
 });
+socket.on("wids_status", renderWidsStatus);
+setInterval(refreshWidsStatus, 2000);
+refreshWidsStatus();
 
 const WIDS_CAT_LABEL = {
   fingerprint: "指紋", mac_layer: "MAC層", behavioral: "行為",
@@ -211,6 +287,8 @@ function widsEvidenceStr(evt) {
 }
 socket.on("wids_event", (evt) => {
   const box = $("#wids-events");
+  const empty = box.querySelector(".empty");
+  if (empty) empty.remove();
   const ts = new Date(evt.ts * 1000).toLocaleTimeString();
   const ev = widsEvidenceStr(evt);
   const row = document.createElement("div");

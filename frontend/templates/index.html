@@ -119,12 +119,19 @@
     <div class="panel-head">
       <h2>WIDS — Wireless Intrusion Detection</h2>
       <div class="controls">
-        <label>Monitor Iface <input id="wids-iface" value="wlan0mon"></label>
+        <label>Wireless Interface <select id="wids-iface"></select></label>
+        <label>Channel <input id="wids-channel" type="number" value="6" min="1" max="233"></label>
+        <button id="wids-refresh">Refresh</button>
         <button id="wids-start" class="primary">Start</button>
         <button id="wids-stop" class="danger">Stop</button>
       </div>
     </div>
-    <div id="wids-events" class="events"></div>
+    <div id="wids-status" class="wids-status state-stopped">
+      <strong>STOPPED</strong><span>Select a real wireless interface to begin.</span>
+    </div>
+    <div id="wids-events" class="events">
+      <p class="empty">No real RF events captured.</p>
+    </div>
   </section>
 
   <!-- ============================================= LOGS -->
