@@ -28,7 +28,12 @@ import subprocess
 from dataclasses import dataclass, field
 
 # ---- tunable detection thresholds (field-tunable) --------------------------
-SEQ_JUMP_TOLERANCE = 300         # max plausible signed seq delta between frames of one BSSID
+SEQ_JUMP_TOLERANCE = 300         # minimum raw backward jump worth tracking
+SEQ_ANOMALY_WINDOW_S = 10        # require repeated jumps inside this window
+SEQ_ANOMALY_THRESHOLD = 3        # one out-of-order/missed frame is not an intrusion
+SEQ_ANOMALY_COOLDOWN_S = 30      # prevent repeated alerts for the same transmitter
+SEQ_ROLLOVER_HIGH = 3584         # normal 4095 -> 0 rollover guard band
+SEQ_ROLLOVER_LOW = 512
 TSF_DRIFT_BOUND_US = 2_000_000   # 2 s: TSF divergence beyond this ⇒ a second radio
 RSSI_SPIKE_DBM = 15              # sudden RSSI change (dBm) for a "stable" BSSID
 DEAUTH_FLOOD_WINDOW_S = 5
@@ -50,6 +55,7 @@ class FrameObservation:
     fc_type: int = 0             # 0=mgmt 1=ctrl 2=data
     subtype: int = 0             # 8=Beacon 5=ProbeResp 12=Deauth ...
     bssid: str = ""
+    transmitter: str = ""       # 802.11 TA (addr2); sequence counters belong to a transmitter
     ssid: str = ""
     channel: int = None
     seq: int = None              # 0..4095 sequence number
@@ -154,29 +160,52 @@ class MacSpoofDetector:
     """Right branch — BSSID/MAC spoof, via 802.11 low-level invariants."""
 
     def __init__(self):
-        self.last_seq = {}    # bssid -> last seq
+        self.last_seq = {}    # (bssid, transmitter) -> last management seq
+        self.seq_anomalies = {}  # key -> timestamps of corroborating backward jumps
+        self.seq_last_alert = {} # key -> last alert timestamp (debounce)
         self.last_tsf = {}    # bssid -> (tsf, wall_clock)
 
     def feed(self, obs, state):
-        if obs.fc_type == 2 and not obs.is_deauth:  # skip bulk data for seq (noisy)
-            pass
+        # AP-spoof sequence analysis is meaningful only on AP-originated
+        # advertisements. Data frames mix independent client/QoS sequence spaces
+        # and were the main source of false HIGH alerts in real monitor captures.
+        if obs.fc_type != 0 or obs.subtype not in (8, 5) or obs.retry:
+            return []
         bssid = (obs.bssid or "").upper()
         if not bssid:
             return []
+        transmitter = (obs.transmitter or bssid).upper()
+        key = (bssid, transmitter)
         out = []
 
-        # Sequence-number jump: two radios sharing one BSSID interleave counters,
-        # producing a backward jump larger than any single-radio gap.
+        # Sequence-number evidence: use raw backward movement, not the shortest
+        # signed modular delta. For example 475 -> 3926 is forward progress with
+        # missed frames, not a -645 jump. Ignore a normal 4095 -> 0 rollover and
+        # require multiple jumps before emitting one MEDIUM-confidence event.
         if obs.seq is not None:
-            prev = self.last_seq.get(bssid)
+            prev = self.last_seq.get(key)
             if prev is not None:
-                signed = ((obs.seq - prev + 2048) % 4096) - 2048
-                if signed < -SEQ_JUMP_TOLERANCE:
-                    out.append(_ev("seq_anomaly",
-                                   f"{bssid} 序號回跳 {prev}→{obs.seq}（Δ{signed}，疑似第二台發射機）",
-                                   "high", "mac_layer", obs,
-                                   {"seq_prev": prev, "seq_now": obs.seq, "delta": signed}))
-            self.last_seq[bssid] = obs.seq
+                raw_delta = obs.seq - prev
+                rollover = prev >= SEQ_ROLLOVER_HIGH and obs.seq <= SEQ_ROLLOVER_LOW
+                if raw_delta < -SEQ_JUMP_TOLERANCE and not rollover:
+                    now = time.time()
+                    hits = self.seq_anomalies.setdefault(key, [])
+                    hits.append(now)
+                    hits[:] = [t for t in hits if now - t <= SEQ_ANOMALY_WINDOW_S]
+                    last_alert = self.seq_last_alert.get(key, 0)
+                    if (len(hits) >= SEQ_ANOMALY_THRESHOLD
+                            and now - last_alert >= SEQ_ANOMALY_COOLDOWN_S):
+                        self.seq_last_alert[key] = now
+                        out.append(_ev(
+                            "seq_anomaly",
+                            f"{bssid} 在 {SEQ_ANOMALY_WINDOW_S}s 內出現 {len(hits)} 次序號回跳"
+                            f"（最近 {prev}→{obs.seq}，需與 TSF／指紋證據交叉確認）",
+                            "medium", "mac_layer", obs,
+                            {"seq_prev": prev, "seq_now": obs.seq,
+                             "delta": raw_delta, "count": len(hits),
+                             "window_s": SEQ_ANOMALY_WINDOW_S,
+                             "transmitter": transmitter}))
+            self.last_seq[key] = obs.seq
 
         # TSF collision: a real AP's µs timer advances monotonically with wall time;
         # a spoofing radio cannot mirror it.
@@ -549,6 +578,7 @@ class WIDSMonitor:
         obs = FrameObservation(
             fc_type=int(d.type), subtype=int(d.subtype),
             bssid=(d.addr3 or d.addr2 or "").upper(),
+            transmitter=(d.addr2 or "").upper(),
             retry=bool(int(d.FCfield) & 0x08),
         )
         if d.SC is not None:

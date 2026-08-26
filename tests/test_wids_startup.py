@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from modules.wids import WIDSMonitor
+from modules.wids import FrameObservation, MacSpoofDetector, WIDSMonitor
 
 
 class SocketStub:
@@ -80,6 +80,54 @@ class WidsStartupTests(unittest.TestCase):
         run.return_value.stdout = "phy#0\n\tInterface wlan0\nphy#1\n\tInterface wlan1mon\n"
 
         self.assertEqual(WIDSMonitor.list_interfaces(), ["wlan0", "wlan1mon"])
+
+
+class SequenceDetectorTests(unittest.TestCase):
+    BSSID = "54:AF:97:62:DA:6A"
+
+    @staticmethod
+    def beacon(seq, retry=False, transmitter=None):
+        return FrameObservation(
+            fc_type=0, subtype=8, bssid=SequenceDetectorTests.BSSID,
+            transmitter=transmitter or SequenceDetectorTests.BSSID,
+            seq=seq, retry=retry,
+        )
+
+    def setUp(self):
+        self.detector = MacSpoofDetector()
+
+    def test_large_forward_gap_is_not_misread_as_negative_modular_jump(self):
+        self.assertEqual(self.detector.feed(self.beacon(475), {}), [])
+        self.assertEqual(self.detector.feed(self.beacon(3926), {}), [])
+
+    def test_data_frames_are_not_used_for_ap_sequence_detection(self):
+        first = FrameObservation(fc_type=2, bssid=self.BSSID, transmitter="AA:00:00:00:00:01", seq=2000)
+        second = FrameObservation(fc_type=2, bssid=self.BSSID, transmitter="AA:00:00:00:00:02", seq=10)
+        self.assertEqual(self.detector.feed(first, {}), [])
+        self.assertEqual(self.detector.feed(second, {}), [])
+        self.assertEqual(self.detector.last_seq, {})
+
+    def test_normal_rollover_is_ignored(self):
+        self.detector.feed(self.beacon(4000), {})
+        self.assertEqual(self.detector.feed(self.beacon(20), {}), [])
+
+    def test_single_backward_jump_is_not_an_alert(self):
+        self.detector.feed(self.beacon(2000), {})
+        self.assertEqual(self.detector.feed(self.beacon(1000), {}), [])
+
+    def test_three_backward_jumps_emit_one_medium_alert(self):
+        events = []
+        for seq in (3000, 2000, 3100, 1900, 3200, 1800):
+            events.extend(self.detector.feed(self.beacon(seq), {}))
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "seq_anomaly")
+        self.assertEqual(events[0]["severity"], "medium")
+        self.assertEqual(events[0]["evidence"]["count"], 3)
+
+    def test_retry_beacon_is_ignored(self):
+        self.detector.feed(self.beacon(2000), {})
+        self.assertEqual(self.detector.feed(self.beacon(1000, retry=True), {}), [])
 
 
 if __name__ == "__main__":
