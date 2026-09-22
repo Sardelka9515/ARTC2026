@@ -18,7 +18,7 @@
     </div>
   </div>
   <div class="status">
-    <a href="{{ url_for('index') }}" class="flow-link">Classic Dashboard</a>
+    <a href="{{ url_for('index') }}" class="flow-link">Dashboard</a>
     <span id="conn-dot" class="dot"></span>
     <span id="conn-text">connecting…</span>
   </div>
@@ -28,10 +28,16 @@
 <div class="run-bar">
   <div class="run-config">
     <label>監聽介面 Interface
-      <select id="cfg-iface"><option value="wlan0">wlan0</option></select>
+      <select id="cfg-iface"><option value="">載入中…</option></select>
     </label>
     <label>受測 T-BOX BSSID <small>(留空則自動掃描選定)</small>
       <input id="cfg-bssid" placeholder="auto-detect">
+    </label>
+    <label>WIDS 監聽範圍
+      <select id="wids-scope">
+        <option value="target">僅受測 AP（含同名偽冒 AP）</option>
+        <option value="all">完整 WIDS（目前頻道）</option>
+      </select>
     </label>
     <label class="check-option">
       <input id="cfg-client-mode" type="checkbox" checked>

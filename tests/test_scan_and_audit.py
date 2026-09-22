@@ -1,13 +1,39 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from modules.config_audit import _is_hidden_ssid, audit_target
-from modules.scan import _parse_iw_scan
+from modules.scan import _parse_iw_scan, scan_networks, list_interfaces, interface_choices
+
+
+class RealDiscoveryTests(unittest.TestCase):
+    def test_empty_or_failed_scan_never_returns_demo_aps(self):
+        for result in (Mock(stdout='', returncode=0), OSError('no adapter')):
+            with patch('modules.scan.shutil.which', return_value='/usr/sbin/iw'), \
+                 patch('modules.scan.subprocess.run') as run, \
+                 patch('modules.scan._scapy_scan', return_value=[]):
+                if isinstance(result, Exception):
+                    run.side_effect = result
+                else:
+                    run.return_value = result
+                self.assertEqual(scan_networks('wlan1'), [])
+
+    def test_missing_hardware_never_creates_interfaces(self):
+        with patch('modules.scan.subprocess.run', side_effect=OSError('missing iw')):
+            self.assertEqual(list_interfaces(), [])
+
+    def test_roles_follow_vendor_when_interface_names_change(self):
+        def read(path):
+            return 'PRODUCT=e8d/7961/100\n' if 'wlan0' in str(path) else 'PRODUCT=2357/120/200\n'
+        with patch.object(Path, 'read_text', read):
+            self.assertEqual(interface_choices(['wlan0', 'wlan1'], 'scan')['preferred'], 'wlan0')
+            self.assertEqual(interface_choices(['wlan0', 'wlan1'], 'wids')['preferred'], 'wlan1')
+        with patch.object(Path, 'read_text', side_effect=OSError):
+            self.assertIsNone(interface_choices(['wlan0'], 'scan')['preferred'])
 
 
 class IwScanParserTests(unittest.TestCase):

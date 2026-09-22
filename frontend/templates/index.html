@@ -1,149 +1,129 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IoV Wi-Fi Security Testing Platform</title>
+<title>車聯網 Wi-Fi 資安檢測平台</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}">
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
-<body>
+<body class="flow-body dashboard-body">
 <header class="topbar">
   <div class="brand">
     <span class="logo">◉</span>
     <div>
-      <h1>IoV Wi-Fi Security Testing Platform</h1>
-      <small>ARTC × NCU CSIE &middot; UN R155 / ISO-SAE 21434 oriented</small>
+      <h1>車聯網 Wi-Fi 資安檢測平台</h1>
+      <small>二、研究方法與實施步驟 &middot; AP 模式 / 用戶端／站台模式</small>
     </div>
   </div>
   <div class="status">
-    <a href="{{ url_for('flow') }}" class="flow-link">Pipeline View</a>
+    <a href="{{ url_for('legacy') }}" class="flow-link">舊版介面</a>
     <span id="conn-dot" class="dot"></span>
-    <span id="conn-text">connecting…</span>
+    <span id="conn-text">連線中…</span>
   </div>
 </header>
 
-<nav class="tabs">
-  <button class="tab active" data-tab="scan">1. Scan</button>
-  <button class="tab" data-tab="audit">2. Config Audit</button>
-  <button class="tab" data-tab="attack">3. Attack Scenarios</button>
-  <button class="tab" data-tab="wids">4. WIDS Monitor</button>
-  <button class="tab" data-tab="logs">5. Logs</button>
-</nav>
-
-<main>
-  <!-- ============================================= SCAN -->
-  <section id="tab-scan" class="panel active">
+<main class="dashboard-main">
+  <section class="scan-block" aria-labelledby="scan-heading">
     <div class="panel-head">
-      <h2>Wireless Environment Scan</h2>
+      <div><span class="eyebrow">01 / 選擇受測目標</span><h2 id="scan-heading">掃描與選擇 BSSID</h2></div>
       <div class="controls">
-        <label>Interface
-          <select id="scan-iface"></select>
-        </label>
-        <label>Duration (s)
-          <input id="scan-duration" type="number" value="10" min="5" max="60">
-        </label>
-        <button id="scan-btn" class="primary">Start Scan</button>
+        <label>無線介面<select id="cfg-iface"><option value="">載入中…</option></select></label>
+        <label>掃描時間（秒）<input id="scan-duration" type="number" value="10" min="5" max="60"></label>
+        <button id="scan-btn" class="primary">開始掃描</button>
       </div>
     </div>
-    <table class="grid">
+    <div class="scan-table-wrap">    <table class="grid">
       <thead>
         <tr>
-          <th>BSSID</th><th>SSID</th><th>Ch</th><th>Signal</th>
-          <th>Encryption</th><th>WPS</th><th>PMF</th><th></th>
+          <th>BSSID</th><th>SSID</th><th>頻道</th><th>訊號強度</th>
+          <th>加密方式</th><th>WPS</th><th>PMF</th><th></th>
         </tr>
       </thead>
-      <tbody id="scan-tbody"><tr><td colspan="8" class="empty">No scan yet.</td></tr></tbody>
+      <tbody id="scan-tbody"><tr><td colspan="8" class="empty">尚未進行掃描。</td></tr></tbody>
     </table>
+</div>
+    <fieldset id="test-selection" class="test-selection" aria-describedby="selection-note">
+      <legend>選擇檢測項目</legend>
+      <p id="selection-note">勾選本次要執行的測項，流程會依選擇更新；未勾選的項目不會執行。</p>
+      <div class="test-options">
+        <label><input type="checkbox" name="test-item" value="1" checked><span><b>1</b> 禁用 WPS</span></label>
+        <label><input type="checkbox" name="test-item" value="2" checked><span><b>2</b> 使用 WPA3 / 802.1X</span></label>
+        <label><input type="checkbox" name="test-item" value="3" checked><span><b>3</b> 檢查 AP 是否啟用 PMF / 802.11w</span></label>
+        <label><input type="checkbox" name="test-item" value="4" checked><span><b>4</b> 管控 SSID 廣播 / 限制接入</span></label>
+        <label><input type="checkbox" name="test-item" value="5" checked><span><b>5</b> 防 Rogue AP / 釣魚熱點</span></label>
+        <label><input type="checkbox" name="test-item" value="8" checked><span><b>8</b> 無線入侵偵測 WIDS/WIPS</span></label>
+        <label><input type="checkbox" name="test-item" value="9" checked><span><b>9</b> 偵測大量重傳 / 非法握手</span></label>
+        <label><input type="checkbox" name="test-item" value="28" checked><span><b>28</b> 模擬 deauth 與 rogue AP 測試</span></label>
+      </div>
+      <p id="selection-status" role="status">已選擇 8 項檢測</p>
+    </fieldset>
+    <div class="target-bar">
+      <label>受測目標 BSSID<input id="cfg-bssid" placeholder="選擇網路或輸入 BSSID"></label>
+      <label>頻道<input id="cfg-channel" type="number" value="6" min="1" max="233"></label>
+      <label>第 28 項攻擊裝置<select id="attack-engine"><option value="pineapple">WiFi Pineapple VII</option><option value="local">本機工具</option></select></label>
+      <div class="run-actions"><button id="run-btn" class="primary big">▶ 開始檢測</button><button id="reset-btn" class="ghost">↺ 重設</button><button id="scenario-stop" class="danger" disabled>停止攻擊測試</button></div>
+    </div>
+    <p id="target-note" class="target-note" role="status">請先選擇受測目標，再開始檢測流程。</p>
   </section>
+  <div class="down-arrow" aria-hidden="true">↓</div>
+  <div class="workspace-grid">
+    <div class="testing-column">
+      <div class="pipeline" id="pipeline"></div>
+      <div class="down-arrow" aria-hidden="true">↓</div>
+  <section class="dock">
+    <div class="dock-head" id="dock-head">
+      <div class="dock-title">
+        <span class="dock-icon">▤</span>
+        <span>檢測進度與即時日誌</span>
+        <span id="dock-stat" class="dock-stat">待命</span>
+      </div>
+      <span class="chevron" id="dock-chevron">⌄</span>
+    </div>
 
-  <!-- ============================================= AUDIT -->
-  <section id="tab-audit" class="panel">
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span class="progress-label" id="progress-label">0%</span>
+    </div>
+
+    <div class="dock-body" id="dock-body">
+      <div class="log-toolbar">
+        <span id="log-count" class="log-count">0 行</span>
+        <button id="log-clear" class="ghost sm">清除</button>
+      </div>
+      <div class="logstream" id="logstream">
+        <div class="log-empty">尚無活動 — 按下 <b>開始檢測</b> 以執行檢測流程。</div>
+      </div>
+    </div>
+  </section>
+    </div>
+    <aside class="wids-block" aria-label="WIDS 無線入侵偵測">
+      <span class="eyebrow">即時監控</span>
     <div class="panel-head">
-      <h2>Baseline Security Config Audit</h2>
+      <h2>WIDS 無線入侵偵測</h2>
       <div class="controls">
-        <label>Target BSSID
-          <input id="audit-bssid" placeholder="AA:BB:CC:11:22:33">
-        </label>
-        <button id="audit-btn" class="primary">Run Audit</button>
-      </div>
-    </div>
-    <div id="audit-result" class="result-card">
-      <p class="empty">No audit performed yet. Pick a network from the Scan tab or enter a BSSID.</p>
-    </div>
-  </section>
-
-  <!-- ============================================= ATTACK -->
-  <section id="tab-attack" class="panel">
-    <div class="panel-head">
-      <h2>Attack Scenario Runner <small>(wifite2 / aircrack-ng / reaver / hostapd)</small></h2>
-    </div>
-
-    <div class="scenario-grid">
-      <div class="scenario-form">
-        <label>Scenario
-          <select id="scenario-select">
-            <option value="wifite_auto">wifite2 — automated audit</option>
-            <option value="handshake_cap">Capture WPA handshake</option>
-            <option value="deauth">Deauth flood (PMF test)</option>
-            <option value="wps_bruteforce">WPS brute-force (Reaver)</option>
-            <option value="rogue_ap">Rogue AP / Evil Twin (hostapd)</option>
-            <option value="pmf_probe">PMF (802.11w) probe</option>
-          </select>
-        </label>
-        <label>Interface <input id="atk-iface" value="wlan0mon"></label>
-        <label>Target BSSID <input id="atk-bssid" placeholder="AA:BB:CC:11:22:33"></label>
-        <label>Channel <input id="atk-channel" type="number" value="6"></label>
-        <label>Extra params (JSON)
-          <input id="atk-extra" placeholder='{"wordlist":"/path/rockyou.txt"}'>
-        </label>
-        <div class="row">
-          <button id="atk-start" class="primary">Start</button>
-          <button id="atk-stop" class="danger">Stop current</button>
-        </div>
-        <p class="hint">Only run against authorized test targets (ARTC T-BOX bench).</p>
-      </div>
-
-      <div class="scenario-output">
-        <div class="out-head">
-          <span>Live output</span>
-          <span id="current-job" class="job-tag">no job</span>
-        </div>
-        <pre id="atk-output" class="console">Ready.\n</pre>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================= WIDS -->
-  <section id="tab-wids" class="panel">
-    <div class="panel-head">
-      <h2>WIDS — Wireless Intrusion Detection</h2>
-      <div class="controls">
-        <label>Wireless Interface <select id="wids-iface"></select></label>
-        <label>Channel <input id="wids-channel" type="number" value="6" min="1" max="233"></label>
-        <button id="wids-refresh">Refresh</button>
-        <button id="wids-start" class="primary">Start</button>
-        <button id="wids-stop" class="danger">Stop</button>
+        <label>無線介面 <select id="wids-iface"></select></label>
+        <label>監聽範圍 <select id="wids-scope"><option value="target">僅受測 AP（含同名偽冒 AP）</option><option value="all">完整 WIDS（目前頻道）</option></select></label>
+        <label>頻道 <input id="wids-channel" type="number" value="6" min="1" max="233"></label>
+        <button id="wids-refresh">重新整理</button>
+        <button id="wids-start" class="primary">啟動</button>
+        <button id="wids-stop" class="danger">停止</button>
       </div>
     </div>
     <div id="wids-status" class="wids-status state-stopped">
-      <strong>STOPPED</strong><span>Select a real wireless interface to begin.</span>
+      <strong>已停止</strong><span>請選擇實體無線介面以開始監聽。</span>
     </div>
     <div id="wids-events" class="events">
-      <p class="empty">No real RF events captured.</p>
+      <p class="empty">尚未擷取到無線訊號事件。</p>
     </div>
-  </section>
-
-  <!-- ============================================= LOGS -->
-  <section id="tab-logs" class="panel">
-    <div class="panel-head">
-      <h2>Audit Log</h2>
-      <button id="logs-refresh" class="primary">Refresh</button>
-    </div>
-    <pre id="logs-box" class="console">(empty)</pre>
-  </section>
+    </aside>
+  </div>
 </main>
-
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/flow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>

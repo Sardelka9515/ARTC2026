@@ -9,16 +9,28 @@
 const socket = io();
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => r.querySelectorAll(s);
+const chineseUI = document.documentElement.lang.startsWith("zh");
+const uiText = (text) => chineseUI ? ({
+  connected: "已連線", disconnected: "已斷線", idle: "待命", running: "執行中",
+  "1. AP 模式": "1. AP 基地台模式", "2. Client / Station 模式": "2. 用戶端／站台模式",
+  "Security Configuration Audit": "檢查無線網路安全設定",
+  "Advanced Protection": "檢查 AP 管理訊框保護設定",
+  "Active Defense · WIDS": "無線入侵偵測與主動防禦",
+  "Attack Simulation & Validation": "模擬攻擊並驗證防護效果",
+  pass: "通過", fail: "失敗", warn: "警告", info: "資訊", manual: "人工驗證", skipped: "略過", pending: "待測",
+  PASS: "通過", FAIL: "失敗", WARN: "警告", INFO: "資訊", MANUAL: "人工驗證",
+  log: "日誌", ok: "成功",
+})[text] || text : text;
 const initialParams = new URLSearchParams(window.location.search);
 
 // ---- connection status ----------------------------------------------------
 socket.on("connect", () => {
   $("#conn-dot").classList.add("ok");
-  $("#conn-text").textContent = "connected";
+  $("#conn-text").textContent = uiText("connected");
 });
 socket.on("disconnect", () => {
   $("#conn-dot").classList.remove("ok");
-  $("#conn-text").textContent = "disconnected";
+  $("#conn-text").textContent = uiText("disconnected");
 });
 
 // ---- T-BOX operating modes (report's two top-level headings) --------------
@@ -39,9 +51,9 @@ const STAGES = [
     id: "config", mode: "ap", sub: "a",
     title: "安全組態檢測", en: "Security Configuration Audit",
     items: [
-      { key: "wps", label: "禁用不安全連線（WPS）杜絕暴力破解" },
-      { key: "auth", label: "導入高安全性驗證（WPA3 / 802.1X）" },
-      { key: "ssid", label: "隱藏或管控 SSID 廣播" },
+      { key: "wps", testId: 1, label: "禁用不安全連線（WPS）杜絕暴力破解" },
+      { key: "auth", testId: 2, label: "導入高安全性驗證（WPA3 / 802.1X）" },
+      { key: "ssid", testId: 4, label: "隱藏或管控 SSID 廣播" },
     ],
     run: runConfigAudit,
   },
@@ -49,8 +61,7 @@ const STAGES = [
     id: "advanced", mode: "ap", sub: "b",
     title: "進階防護技術檢測", en: "Advanced Protection",
     items: [
-      { key: "pmf", label: "管理訊框保護（PMF / 802.11w）防偽造斷線" },
-      { key: "isolation", label: "網段安全隔離（Client Isolation）防橫向移動" },
+      { key: "pmf", testId: 3, label: "檢查 AP 是否啟用 PMF / 802.11w" },
     ],
     run: runAdvancedProtection,
   },
@@ -58,8 +69,9 @@ const STAGES = [
     id: "wids", mode: "client", sub: "a",
     title: "主動防禦與異常偵測", en: "Active Defense · WIDS",
     items: [
-      { key: "handshake", label: "辨識大量重傳 / 非法握手（DoS·破解嘗試）" },
-      { key: "rogue", label: "偵測惡意熱點 / 釣魚熱點，防止誤連" },
+      { key: "monitor", testId: 8, selectionOnly: true, label: "無線入侵偵測 WIDS/WIPS" },
+      { key: "handshake", testId: 9, label: "辨識大量重傳 / 非法握手（DoS·破解嘗試）" },
+      { key: "rogue", testId: 5, label: "偵測惡意熱點 / 釣魚熱點，防止誤連" },
     ],
     run: runWids,
   },
@@ -67,17 +79,38 @@ const STAGES = [
     id: "attacksim", mode: "client", sub: "b",
     title: "攻擊模擬與驗證", en: "Attack Simulation & Validation",
     items: [
-      { key: "deauth", label: "模擬 Deauth 解除認證攻擊" },
-      { key: "rogue_ap", label: "架設釣魚熱點（Rogue AP / Evil Twin）" },
-      { key: "log", label: "完整事件日誌（Log）儲存與紀錄" },
+      { key: "deauth", testId: 28, label: "模擬 Deauth 解除認證攻擊" },
+      { key: "rogue_ap", testId: 28, label: "架設釣魚熱點（Rogue AP / Evil Twin）" },
+      { key: "log", testId: 28, label: "完整事件日誌（Log）儲存與紀錄" },
     ],
     run: runAttackSim,
   },
 ];
 
 // shared state passed between stages
-const ctx = { iface: "wlan0", bssid: "", channel: 6, networks: [], report: null };
+const ctx = { iface: "", bssid: "", channel: 6, networks: [], report: null };
 let running = false;
+
+// A missing selector keeps the original /flow behavior.
+function selectedTestIds() {
+  if (!$("#test-selection")) return null;
+  return new Set([...$$("#test-selection input:checked")].map(input => Number(input.value)));
+}
+function selectedItems(stage) {
+  const ids = selectedTestIds();
+  return stage.items.filter(item => ids ? ids.has(item.testId) : !item.selectionOnly);
+}
+function visibleStages() {
+  return STAGES.filter(stage => selectedItems(stage).length);
+}
+function testSelected(id) {
+  const ids = selectedTestIds();
+  return !ids || ids.has(id);
+}
+function selectedAuditChecks() {
+  return Object.keys(CHECK_KEYS).filter(name => STAGES.some(stage =>
+    selectedItems(stage).some(item => item.key === CHECK_KEYS[name])));
+}
 
 // ---- build the pipeline DOM (grouped by mode) -----------------------------
 function cardHTML(st) {
@@ -85,11 +118,11 @@ function cardHTML(st) {
     <div class="card" id="card-${st.id}" data-state="pending">
       <span class="num">${st.sub}</span>
       <h3>${st.title}</h3>
-      <p class="desc">${st.en}</p>
-      <ul class="items">${st.items.map(i => `
+      <p class="desc">${uiText(st.en)}</p>
+      <ul class="items">${selectedItems(st).map(i => `
         <li data-check-key="${i.key}" data-status="pending">
           <div class="item-main">
-            <span class="item-text">${i.label}<span class="item-detail"></span></span>
+            <span class="item-text">${$("#test-selection") ? `${i.testId} · ` : ""}${i.label}<span class="item-detail"></span></span>
             <span class="mini-chip info">待測</span>
           </div>
         </li>`).join("")}</ul>
@@ -109,18 +142,21 @@ function connectorEl(flatIdx, mode = false) {
 function buildPipeline() {
   const wrap = $("#pipeline");
   wrap.innerHTML = "";
-  const order = ["ap", "client"];
-  let flat = 0;
+  const visible = visibleStages();
+  const order = ["ap", "client"].filter(mode => visible.some(stage => stage.mode === mode));
+  if (!visible.length) {
+    wrap.innerHTML = '<p class="empty">尚未選擇測項，請先勾選要執行的檢測項目。</p>';
+  }
 
   order.forEach((mode, gi) => {
-    const stages = STAGES.filter(s => s.mode === mode);
+    const stages = visible.filter(s => s.mode === mode);
     const group = document.createElement("div");
     group.className = "mode-group";
     group.dataset.mode = mode;
     const m = MODES[mode];
     group.innerHTML =
       `<div class="mode-band">
-         <span class="mode-name">${m.label}</span>
+         <span class="mode-name">${uiText(m.label)}</span>
          <span class="mode-desc">${m.desc}</span>
        </div>`;
 
@@ -131,14 +167,13 @@ function buildPipeline() {
       col.className = "card-col";
       col.innerHTML = cardHTML(st);
       row.appendChild(col);
-      if (i < stages.length - 1) row.appendChild(connectorEl(flat));
-      flat++;
+      if (i < stages.length - 1) row.appendChild(connectorEl(STAGES.indexOf(st)));
     });
     group.appendChild(row);
     wrap.appendChild(group);
 
     // connector bridging the two modes
-    if (gi < order.length - 1) wrap.appendChild(connectorEl(flat - 1, true));
+    if (gi < order.length - 1) wrap.appendChild(connectorEl(STAGES.indexOf(stages[stages.length - 1]), true));
   });
 }
 
@@ -160,7 +195,7 @@ function setCheckState(stageId, key, status, detail = "") {
         : "info";
   item.dataset.status = normalized;
   $(".mini-chip", item).className = `mini-chip ${chipClass}`;
-  $(".mini-chip", item).textContent = status || "INFO";
+  $(".mini-chip", item).textContent = uiText(status || "INFO");
   $(".item-detail", item).textContent = detail || "";
 }
 
@@ -201,7 +236,7 @@ function setProgress(pct, variant) {
 }
 function setDockStat(text, cls) {
   const el = $("#dock-stat");
-  el.textContent = text;
+  el.textContent = uiText(text);
   el.className = "dock-stat" + (cls ? " " + cls : "");
 }
 
@@ -216,7 +251,7 @@ function log(message, level = "log") {
   line.className = `log-line lv-${level}`;
   line.innerHTML =
     `<span class="lt">${ts}</span>` +
-    `<span class="lc">${level}</span>` +
+    `<span class="lc">${uiText(level)}</span>` +
     `<span class="lm">${escapeHtml(message)}</span>`;
   stream.appendChild(line);
   stream.scrollTop = stream.scrollHeight;
@@ -237,19 +272,19 @@ const CHECK_KEYS = {
   "Strong auth (WPA3 / 802.1X)": "auth",
   "SSID broadcast policy": "ssid",
   "PMF (802.11w)": "pmf",
-  "Client isolation": "isolation",
 };
 
 function detRow(c) {
   return `<div class="det">
     <span class="dn">${escapeHtml(c.name)}：${escapeHtml(c.detail)}</span>
-    <span class="chip ${chipFor(c.status)}">${c.status}</span>
+    <span class="chip ${chipFor(c.status)}">${uiText(c.status)}</span>
   </div>`;
 }
 
 // Summarise a subset of audit checks into a stage result.
 function summarizeChecks(report, names, label, stageId) {
-  const checks = (report.checks || []).filter(c => names.includes(c.name));
+  const keys = selectedItems(STAGES.find(stage => stage.id === stageId)).map(item => item.key);
+  const checks = (report.checks || []).filter(c => names.includes(c.name) && keys.includes(CHECK_KEYS[c.name]));
   checks.forEach(c => {
     log(`  [${c.status}] ${c.name} — ${c.detail}`, lvlFor(c.status));
     if (stageId) setCheckState(stageId, CHECK_KEYS[c.name], statusForItem(c.status), c.detail);
@@ -288,37 +323,67 @@ function summarizeChecks(report, names, label, stageId) {
 }
 
 // Launch one attack scenario as a job and resolve when it ends.
+let activeScenarioJob = null;
+let attackStopRequested = false;
 function runScenarioJob(scenario, extra) {
-  return new Promise(async (resolve) => {
-    const params = Object.assign(
-      { interface: ctx.iface, bssid: ctx.bssid, channel: ctx.channel || 6 },
-      extra || {});
-    const d = await postJSON("/api/attack/start", { scenario, params });
-    if (!d.ok) {
-      log(`啟動 ${scenario} 失敗：${d.error}`, "fail");
-      return resolve({ ok: false, lines: 0, status: "error" });
-    }
-    const jobId = d.job_id;
-    log(`Job ${jobId}（${scenario}）已啟動。`, "info");
-    let lines = 0;
-    const onOut = (m) => { if (m.job_id === jobId) { log(m.line, "log"); lines++; } };
-    const onUpd = (j) => {
-      if (j.job_id !== jobId) return;
-      if (["finished", "error", "killed"].includes(j.status)) {
-        socket.off("job_output", onOut);
-        socket.off("job_update", onUpd);
-        log(`Job ${jobId} ${j.status}（rc=${j.return_code}）。`,
-          j.status === "finished" ? "ok" : "fail");
-        resolve({ ok: j.status === "finished", lines, status: j.status });
-      }
+  return new Promise((resolve) => {
+    let jobId = null, pollTimer = null, timeoutTimer = null, settled = false, lines = 0;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollTimer);
+      clearTimeout(timeoutTimer);
+      socket.off("job_output", onOut);
+      socket.off("job_update", onUpd);
+      activeScenarioJob = null;
+      if ($("#scenario-stop")) $("#scenario-stop").disabled = true;
+      resolve(result);
+    };
+    const onOut = (message) => {
+      if (message.job_id === jobId) { log(message.line, "log"); lines++; }
+    };
+    const onUpd = (job) => {
+      if (job.job_id !== jobId || !["finished", "error", "killed"].includes(job.status)) return;
+      log(`Job ${jobId} ${job.status}（rc=${job.return_code}）。`, job.status === "finished" ? "ok" : "fail");
+      finish({ok: job.status === "finished", lines, status: job.status});
     };
     socket.on("job_output", onOut);
     socket.on("job_update", onUpd);
-    setTimeout(() => {
-      socket.off("job_output", onOut);
-      socket.off("job_update", onUpd);
-      resolve({ ok: true, lines, status: "timeout" });
-    }, 30000);
+    (async () => {
+      try {
+        const params = Object.assign({interface: ctx.iface, bssid: ctx.bssid, channel: ctx.channel || 6}, extra || {});
+        if (["deauth", "rogue_ap"].includes(scenario)) params.engine = $("#attack-engine")?.value || "local";
+        const result = await postJSON("/api/attack/start", {scenario, params});
+        if (!result.ok) {
+          log(`啟動 ${scenario} 失敗：${result.error}`, "fail");
+          return finish({ok: false, lines, status: "error"});
+        }
+        jobId = result.job_id;
+        activeScenarioJob = jobId;
+        if ($("#scenario-stop")) $("#scenario-stop").disabled = false;
+        log(`Job ${jobId}（${scenario}）已啟動。`, "info");
+        // Polling recovers terminal events emitted before the start response,
+        // and continues to work when a Socket.IO connection is interrupted.
+        const poll = async () => {
+          try {
+            const response = await fetch("/api/attack/jobs");
+            const data = await response.json();
+            const job = (data.jobs || []).find(item => item.job_id === jobId);
+            if (job) onUpd(job);
+          } catch (_) { /* watchdog below will stop the job */ }
+        };
+        pollTimer = setInterval(poll, 1000);
+        timeoutTimer = setTimeout(async () => {
+          await postJSON("/api/attack/stop", {job_id: jobId});
+          log("工作逾時，已送出停止要求；請確認裝置已停止，必要時執行 Pineapple restore。", "fail");
+          finish({ok: false, lines, status: "timeout"});
+        }, 120000);
+        await poll();
+      } catch (error) {
+        log(error.message, "fail");
+        finish({ok: false, lines, status: "error"});
+      }
+    })();
   });
 }
 
@@ -345,7 +410,7 @@ async function runConfigAudit() {
   }
 
   log(`對 ${ctx.bssid} 執行安全組態稽核 …`, "info");
-  const a = await postJSON("/api/audit", { bssid: ctx.bssid, interface: ctx.iface });
+  const a = await postJSON("/api/audit", { bssid: ctx.bssid, interface: ctx.iface, checks: selectedAuditChecks() });
   if (!a.ok)
     return { ok: false, summary: "稽核錯誤", errBody: `<pre>${escapeHtml(a.error || "unknown")}</pre>` };
   if (!a.report.target_found)
@@ -359,21 +424,20 @@ async function runConfigAudit() {
     "config");
 }
 
-// AP 模式 · b. 進階防護技術檢測 — PMF/802.11w + Client Isolation (+ 主動 PMF 探測)
+// AP 模式 · b. 檢查 AP 廣告的 PMF/802.11w 設定
 async function runAdvancedProtection() {
-  log("AP 模式｜進階防護技術檢測（PMF / Client Isolation）…", "info");
-
-  // active management-frame protection probe
-  log("執行 PMF (802.11w) 主動探測 …", "info");
-  await runScenarioJob("pmf_probe", {});
+  log("AP 模式｜檢查 AP 廣告的 PMF / 802.11w 設定 …", "info");
 
   // reuse the audit report captured in the config stage
   let rep = ctx.report;
   if (!rep) {
-    const a = await postJSON("/api/audit", { bssid: ctx.bssid, interface: ctx.iface });
-    rep = a.ok ? a.report : { checks: [] };
+    const a = await postJSON("/api/audit", { bssid: ctx.bssid, interface: ctx.iface, checks: selectedAuditChecks() });
+    if (!a.ok || !a.report?.target_found) {
+      return { ok: false, summary: "稽核失敗", errBody: `<pre>${escapeHtml(a.error || a.report?.summary || "目標未找到")}</pre>` };
+    }
+    rep = a.report;
   }
-  return summarizeChecks(rep, ["PMF (802.11w)", "Client isolation"], "進階防護", "advanced");
+  return summarizeChecks(rep, ["PMF (802.11w)"], "進階防護", "advanced");
 }
 
 // Client/Station 模式 · a. 主動防禦與異常偵測 (WIDS)
@@ -417,8 +481,17 @@ function runWids() {
     }));
     if (baseline.length) log(`  白名單基準：${baseline.length} 個受信任 AP。`, "info");
 
-    const d = await postJSON("/api/wids/start", {
-      interface: ctx.iface, channel: ctx.channel, baseline,
+    let alreadyRunning = false;
+    if ($("#wids-iface")) {
+      try {
+        const response = await fetch("/api/wids/status");
+        const current = await response.json();
+        alreadyRunning = current.status?.state === "running";
+      } catch (_) { /* Start request will report connection errors. */ }
+    }
+    const d = alreadyRunning ? { ok: true } : await postJSON("/api/wids/start", {
+      interface: $("#wids-iface")?.value || ctx.iface, channel: $("#wids-channel")?.value || ctx.channel, baseline,
+      scope: $("#wids-scope")?.value || "all", target_bssid: ctx.bssid,
     });
     if (!d.ok)
       return resolve({
@@ -431,6 +504,8 @@ function runWids() {
     const cat = { fingerprint: 0, mac_layer: 0, behavioral: 0, dos: 0 };
     const findings = [];   // notable (non-baseline) events for the err-panel
     const onEvt = (e) => {
+      if (!testSelected(8) && !(testSelected(9) && e.category === "dos") &&
+          !(testSelected(5) && ["fingerprint", "mac_layer", "behavioral"].includes(e.category))) return;
       events++;
       if (e.category in cat) cat[e.category]++;
       if (e.severity === "high") high++;
@@ -449,9 +524,12 @@ function runWids() {
 
     setTimeout(async () => {
       socket.off("wids_event", onEvt);
-      await postJSON("/api/wids/stop", {});
-      const brk = `指紋 ${cat.fingerprint} · MAC層 ${cat.mac_layer} · 行為 ${cat.behavioral} · DoS ${cat.dos}`;
-      log(`WIDS 停止。共 ${events} 事件（${brk}），高危 ${high}。`, high ? "warn" : "ok");
+      if (!alreadyRunning) await postJSON("/api/wids/stop", {});
+      const brk = Object.entries(cat)
+        .filter(([key]) => testSelected(8) || (key === "dos" ? testSelected(9) : testSelected(5)))
+        .map(([key, count]) => `${WIDS_CATS[key].label} ${count}`).join(" · ");
+      setCheckState("wids", "monitor", "manual", "WIDS 監聽完成；WIPS 主動阻擋功能需人工驗證。");
+      log(`WIDS 觀測完成。共 ${events} 事件（${brk}），高危 ${high}。`, high ? "warn" : "ok");
       const rogue = cat.fingerprint + cat.mac_layer + cat.behavioral;
       setCheckState("wids", "handshake", cat.dos ? "warn" : "pass",
         cat.dos ? `偵測到 ${cat.dos} 項 DoS / 握手完整性事件。` : "未偵測到重傳或非法握手異常。");
@@ -473,12 +551,14 @@ function runWids() {
         });
       } else {
         const cleanRows = [
-          { name: "重傳 / 非法握手", status: "PASS", detail: "未偵測到異常。" },
-          { name: "惡意熱點 / 釣魚熱點", status: "PASS", detail: "未偵測到異常。" },
-        ].map(detRow).join("");
+          { testId: 9, name: "重傳 / 非法握手", status: "PASS", detail: "未偵測到異常。" },
+          { testId: 5, name: "惡意熱點 / 釣魚熱點", status: "PASS", detail: "未偵測到異常。" },
+          ...($("#test-selection") && testSelected(8) ? [{ testId: 8, name: "WIDS/WIPS", status: "MANUAL", detail: "WIDS 監聽完成；WIPS 主動阻擋需人工驗證。" }] : []),
+        ].filter(check => testSelected(check.testId)).map(detRow).join("");
         resolve({
           ok: true,
-          summary: `${events} 事件 · ${brk} · 無高危`,
+          warn: !!$("#test-selection") && testSelected(8),
+          summary: `${events} 事件 · ${brk}`,
           errTitle: "主動防禦：檢測明細",
           errBody: cleanRows,
         });
@@ -496,11 +576,18 @@ async function runAttackSim() {
   setCheckState("attacksim", "deauth", d1.ok ? "pass" : "fail",
     d1.ok ? `腳本完成，輸出 ${d1.lines} 行。` : `腳本狀態：${d1.status}`);
 
+  if (!d1.ok || attackStopRequested) {
+    return { ok: false, summary: "Deauth 測試未完成，已停止後續攻擊測試。" };
+  }
+
   log("② 架設釣魚熱點（Rogue AP / Evil Twin）…", "info");
   const d2 = await runScenarioJob("rogue_ap", { config_path: "configs/eviltwin.conf" });
   setCheckState("attacksim", "rogue_ap", d2.ok ? "pass" : "fail",
     d2.ok ? `腳本完成，輸出 ${d2.lines} 行。` : `腳本狀態：${d2.status}`);
 
+  if (attackStopRequested || d2.status === "killed") {
+    return { ok: false, summary: "攻擊測試已停止，請確認裝置還原狀態。" };
+  }
   const totalLines = d1.lines + d2.lines;
   log("③ 所有異常連線事件已寫入稽核日誌（logs/testing.jsonl）。", "ok");
   setCheckState("attacksim", "log", "pass", "事件已寫入 logs/testing.jsonl。");
@@ -535,13 +622,32 @@ async function runAttackSim() {
 
 async function runPipeline() {
   if (running) return;
+  if (!visibleStages().length) {
+    $("#selection-status").textContent = "請至少勾選一個檢測項目。";
+    return;
+  }
+  if ($("#cfg-channel")) {
+    if (!$("#cfg-bssid").value.trim()) {
+      $("#target-note").textContent = "請先選擇網路或輸入 BSSID，再開始檢測。";
+      $("#cfg-bssid").focus();
+      return;
+    }
+    if (!$("#cfg-channel").reportValidity()) return;
+  }
+  if (!$("#cfg-iface").value) {
+    log("請先選擇可用的掃描介面。", "fail");
+    return;
+  }
   running = true;
+  attackStopRequested = false;
+  if ($("#test-selection")) $("#test-selection").disabled = true;
   resetUI(false);
 
-  ctx.iface = $("#cfg-iface").value || "wlan0";
+  ctx.iface = $("#cfg-iface").value;
   ctx.bssid = $("#cfg-bssid").value.trim();
-  ctx.channel = parseInt(initialParams.get("channel") || "6", 10) || 6;
-  ctx.networks = [];
+  ctx.channel = parseInt($("#cfg-channel")?.value || initialParams.get("channel") || "6", 10) || 6;
+  ctx.networks = typeof scannedNetworks !== "undefined"
+    ? scannedNetworks.filter(network => network.bssid.toLowerCase() === ctx.bssid.toLowerCase()) : [];
   ctx.report = null;
 
   $("#run-btn").disabled = true;
@@ -552,7 +658,7 @@ async function runPipeline() {
 
   let failed = false;
   const includeClientMode = $("#cfg-client-mode")?.checked !== false;
-  const activeStages = STAGES.filter(st => includeClientMode || st.mode !== "client");
+  const activeStages = visibleStages().filter(st => includeClientMode || st.mode !== "client");
 
   if (!includeClientMode) {
     STAGES.filter(st => st.mode === "client").forEach(st => {
@@ -613,11 +719,13 @@ async function runPipeline() {
   $("#run-btn").disabled = false;
   $("#reset-btn").disabled = false;
   running = false;
+  if ($("#test-selection")) $("#test-selection").disabled = false;
 }
 
 // ---- reset ----------------------------------------------------------------
 function resetUI(full = true) {
-  STAGES.forEach((st, i) => {
+  visibleStages().forEach((st) => {
+    const i = STAGES.indexOf(st);
     setState(st.id, "pending", "待測");
     setResult(st.id, "");
     resetCheckStates(st.id, "pending", "待測");
@@ -653,28 +761,27 @@ function escapeHtml(s) {
   }[c]));
 }
 async function loadInterfaces() {
+  const sel = $("#cfg-iface");
+  sel.innerHTML = '<option value="">載入中…</option>';
   try {
     const r = await fetch("/api/interfaces");
     const d = await r.json();
-    const sel = $("#cfg-iface");
-    if (d.interfaces && d.interfaces.length) {
-      sel.innerHTML = "";
-      d.interfaces.forEach(i => {
-        const o = document.createElement("option");
-        o.value = i; o.textContent = i;
-        sel.appendChild(o);
-      });
+    sel.replaceChildren();
+    (d.interfaces || []).forEach(i => {
+      const o = document.createElement("option");
+      o.value = i; o.textContent = d.labels?.[i] || i;
+      sel.appendChild(o);
+    });
+    if (!sel.options.length) {
+      sel.innerHTML = '<option value="">找不到無線介面</option>';
+      return;
     }
     const iface = initialParams.get("iface");
-    if (iface) {
-      if (![...sel.options].some(o => o.value === iface)) {
-        const o = document.createElement("option");
-        o.value = iface; o.textContent = iface;
-        sel.appendChild(o);
-      }
-      sel.value = iface;
-    }
-  } catch (e) { /* keep default */ }
+    if (d.interfaces.includes(iface)) sel.value = iface;
+    else if (d.interfaces.includes(d.preferred)) sel.value = d.preferred;
+  } catch (e) {
+    sel.innerHTML = '<option value="">無法取得介面清單</option>';
+  }
 }
 
 function applyInitialTarget() {
@@ -693,3 +800,20 @@ $("#log-clear").addEventListener("click", () => {
   logCount = 0; $("#log-count").textContent = "0 行";
 });
 $("#dock-head").addEventListener("click", () => $(".dock").classList.toggle("collapsed"));
+
+$("#test-selection")?.addEventListener("change", () => {
+  if (running) return;
+  buildPipeline();
+  resetUI(false);
+  const count = selectedTestIds().size;
+  $("#selection-status").textContent = count ? `已選擇 ${count} 項檢測` : "請至少勾選一個檢測項目。";
+});
+
+$("#scenario-stop")?.addEventListener("click", async () => {
+  if (!activeScenarioJob) return;
+  attackStopRequested = true;
+  $("#scenario-stop").disabled = true;
+  const result = await postJSON("/api/attack/stop", {job_id: activeScenarioJob});
+  log(result.ok ? "已要求停止攻擊測試，等待裝置清理與還原。" : "停止要求失敗，請檢查裝置狀態。", result.ok ? "warn" : "fail");
+  if (!result.ok && activeScenarioJob) $("#scenario-stop").disabled = false;
+});

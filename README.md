@@ -80,3 +80,11 @@ All activity is logged to `logs/testing.jsonl` for audit (ISO 21434 traceability
 - [ ] Integrate scapy-based real deauth-reason-code classifier in WIDS
 - [ ] Add role-based auth for the web UI
 - [ ] Export report → PDF (UN R155 evidence package)
+
+## WiFi Pineapple Mark VII
+
+The root dashboard's item 28 can use a USB-connected Pineapple via its REST API.
+Start with `configs/pineapple.example.json` and the Traditional Chinese guide:
+[USB / VM setup, test configuration, WIDS baseline and recovery](docs/PINEAPPLE_SETUP_ZH.md).
+The controller is `scripts/pineapple.py`; `plan` is offline, and hardware operation
+requires a configured local file and explicit enablement. Hardware validation is pending.

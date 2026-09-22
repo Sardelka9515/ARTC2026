@@ -137,7 +137,8 @@ $("#audit-btn").addEventListener("click", async () => {
   const r = await fetch("/api/audit", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ bssid, interface: $("#scan-iface").value }),
+    body: JSON.stringify({ bssid, interface: $("#scan-iface").value,
+      checks: ["WPS disabled", "Strong auth (WPA3 / 802.1X)", "PMF (802.11w)", "SSID broadcast policy"] }),
   });
   const d = await r.json();
   if (!d.ok) { box.innerHTML = `<p class="empty">Error: ${d.error}</p>`; return; }

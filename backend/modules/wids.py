@@ -342,6 +342,9 @@ class WIDSMonitor:
         self._status = self._new_status()
         self._original_type = None
         self._changed_type = False
+        self._scope = "all"
+        self._target_bssids = set()
+        self._target_ssids = set()
 
     @staticmethod
     def _new_status(**updates):
@@ -462,9 +465,14 @@ class WIDSMonitor:
         finally:
             self._changed_type = False
 
-    def start(self, iface, baseline=None, channel=None):
+    def start(self, iface, baseline=None, channel=None, scope="all", target_bssid=None):
         if self._running:
             return {"ok": False, "error": "WIDS is already running", "status": self.status()}
+        if scope not in ("all", "target"):
+            return {"ok": False, "error": "Invalid WIDS scope", "status": self.status()}
+        target = target_bssid.upper() if isinstance(target_bssid, str) else ""
+        if scope == "target" and not re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", target):
+            return {"ok": False, "error": "Select a test AP before starting target-only WIDS", "status": self.status()}
         iface = (iface or "").strip()
         if not iface:
             return {"ok": False, "error": "A wireless interface is required", "status": self.status()}
@@ -479,8 +487,15 @@ class WIDSMonitor:
                 return {"ok": False, "error": "Channel must be between 1 and 233", "status": self.status()}
 
         self._iface = iface
+        self._scope = scope
+        self._target_bssids = {target} if scope == "target" else set()
+        base = baseline or DEFAULT_BASELINE
+        if scope == "target":
+            base = [b for b in base if (b.get("bssid") or "").upper() == target]
+        self._target_ssids = {b["ssid"] for b in base if b.get("ssid")}
         self._set_status(**self._new_status(state="starting", iface=iface, channel=channel,
-                                            capture_source="real"))
+                                            capture_source="real", scope=scope,
+                                            target_bssid=target if scope == "target" else None))
         try:
             active_channel = self._prepare_interface(iface, channel)
             self._verify_capture_access(iface)
@@ -495,7 +510,6 @@ class WIDSMonitor:
 
         self._running = True
         self._state = {}
-        base = baseline or DEFAULT_BASELINE
         # normalize baseline entries to {bssid, ssid, channel}
         norm = [{"bssid": (b.get("bssid") or "").upper(),
                  "ssid": b.get("ssid", ""),
@@ -529,6 +543,12 @@ class WIDSMonitor:
         # real per-AP identity, so only dispatch AP-addressed observations.
         if not obs.bssid or obs.bssid == "FF:FF:FF:FF:FF:FF":
             return
+        if self._scope == "target":
+            # Keep same-SSID impostors visible to Evil Twin detectors.
+            if obs.fc_type == 0 and obs.subtype in (8, 5) and obs.ssid in self._target_ssids:
+                self._target_bssids.add(obs.bssid.upper())
+            if obs.bssid.upper() not in self._target_bssids:
+                return
         for det in self._detectors:
             try:
                 for evt in det.feed(obs, self._state):
@@ -575,9 +595,13 @@ class WIDSMonitor:
     def _parse(pkt, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Deauth,
                Dot11Elt, RadioTap, EAPOL):
         d = pkt[Dot11]
+        bssid = d.addr3
+        if int(d.type) == 2:
+            ds = int(d.FCfield) & 3
+            bssid = {0: d.addr3, 1: d.addr1, 2: d.addr2, 3: None}[ds]
         obs = FrameObservation(
             fc_type=int(d.type), subtype=int(d.subtype),
-            bssid=(d.addr3 or d.addr2 or "").upper(),
+            bssid=(bssid or "").upper(),
             transmitter=(d.addr2 or "").upper(),
             retry=bool(int(d.FCfield) & 0x08),
         )
