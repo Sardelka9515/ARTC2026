@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -80,6 +80,54 @@ class WidsStartupTests(unittest.TestCase):
         run.return_value.stdout = "phy#0\n\tInterface wlan0\nphy#1\n\tInterface wlan1mon\n"
 
         self.assertEqual(WIDSMonitor.list_interfaces(), ["wlan0", "wlan1mon"])
+
+
+class WidsScopeTests(unittest.TestCase):
+    def setUp(self):
+        self.monitor = WIDSMonitor(SocketStub(), LoggerStub())
+        self.detector = Mock()
+        self.detector.feed.return_value = []
+        self.monitor._detectors = [self.detector]
+
+    def test_full_scope_accepts_unrelated_ap(self):
+        obs = FrameObservation(bssid="AA:BB:CC:00:00:02")
+        self.monitor._dispatch(obs)
+        self.detector.feed.assert_called_once()
+
+    def test_target_scope_filters_neighbors_but_keeps_twins(self):
+        self.monitor._scope = "target"
+        self.monitor._target_bssids = {"AA:BB:CC:00:00:01"}
+        self.monitor._target_ssids = {"Test AP"}
+        self.monitor._dispatch(FrameObservation(bssid="AA:BB:CC:00:00:02", ssid="Neighbor", subtype=8))
+        self.detector.feed.assert_not_called()
+        self.monitor._dispatch(FrameObservation(bssid="aa:bb:cc:00:00:01"))
+        self.monitor._dispatch(FrameObservation(bssid="AA:BB:CC:00:00:03", ssid="Test AP", subtype=8))
+        self.monitor._dispatch(FrameObservation(bssid="AA:BB:CC:00:00:03", fc_type=2))
+        self.assertEqual(self.detector.feed.call_count, 3)
+
+    @patch.object(WIDSMonitor, "_prepare_interface")
+    def test_invalid_scope_or_missing_target_rejected_before_hardware(self, prepare):
+        for args in ({"scope": "invalid"}, {"scope": "target"},
+                     {"scope": "target", "target_bssid": "bad"}):
+            self.assertFalse(self.monitor.start("wlan0", **args)["ok"])
+        prepare.assert_not_called()
+
+    @patch("modules.wids.threading.Thread")
+    @patch.object(WIDSMonitor, "_verify_capture_access")
+    @patch.object(WIDSMonitor, "_prepare_interface", return_value=6)
+    def test_target_start_limits_baseline_and_full_restart_clears_filter(self, *_):
+        target = "aa:bb:cc:00:00:01"
+        baseline = [{"bssid": target, "ssid": "Test AP"},
+                    {"bssid": "aa:bb:cc:00:00:02", "ssid": "Neighbor"}]
+        result = self.monitor.start("wlan0", baseline=baseline, scope="target", target_bssid=target)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"]["target_bssid"], target.upper())
+        self.assertEqual(self.monitor._target_ssids, {"Test AP"})
+        self.assertEqual(self.monitor._detectors[0].all_bssids, {target.upper()})
+        self.monitor.stop()
+        self.assertTrue(self.monitor.start("wlan0", scope="all")["ok"])
+        self.assertEqual(self.monitor._scope, "all")
+        self.assertEqual(self.monitor._target_bssids, set())
 
 
 class SequenceDetectorTests(unittest.TestCase):

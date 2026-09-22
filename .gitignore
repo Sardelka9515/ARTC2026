@@ -1,3 +1,6 @@
 /logs
 __pycache__
 .vscode
+/configs/pineapple.local.json
+/configs/*.recovery.json
+/configs/*.lock

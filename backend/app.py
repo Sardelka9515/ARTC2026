@@ -10,9 +10,9 @@ import uuid
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
-from modules.scan import scan_networks
+from modules.scan import scan_networks, interface_choices
 from modules.attack_runner import AttackRunner
-from modules.config_audit import audit_target
+from modules.config_audit import AUDIT_CHECKS, audit_target
 from modules.wids import WIDSMonitor
 from modules.logger import TestLogger
 
@@ -41,6 +41,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/legacy")
+def legacy():
+    """Original tabbed dashboard."""
+    return render_template("legacy.html")
+
+
 @app.route("/flow")
 def flow():
     """Flow-based pipeline view: runs Scan → Audit → Attack → WIDS in sequence."""
@@ -52,7 +58,7 @@ def flow():
 def api_interfaces():
     """List wireless interfaces available on the host."""
     from modules.scan import list_interfaces
-    return jsonify({"interfaces": list_interfaces()})
+    return jsonify(interface_choices(list_interfaces(), "scan"))
 
 
 @app.route("/api/scan", methods=["POST"])
@@ -80,7 +86,13 @@ def api_audit():
     iface = data.get("interface", "wlan0")
     if not bssid:
         return jsonify({"ok": False, "error": "bssid required"}), 400
-    report = audit_target(iface, bssid)
+    checks = data.get("checks")
+    if checks is not None and (
+        not isinstance(checks, list)
+        or any(not isinstance(name, str) or name not in AUDIT_CHECKS for name in checks)
+    ):
+        return jsonify({"ok": False, "error": "Invalid audit checks"}), 400
+    report = audit_target(iface, bssid, checks=checks)
     logger.info("audit", f"Audit {bssid}: {report['summary']}")
     return jsonify({"ok": True, "report": report})
 
@@ -130,7 +142,8 @@ def api_wids_start():
     iface = data.get("interface", "")
     channel = data.get("channel")
     baseline = data.get("baseline")  # optional trusted [{bssid, ssid, channel}]
-    result = wids.start(iface, baseline=baseline, channel=channel)
+    result = wids.start(iface, baseline=baseline, channel=channel,
+                        scope=data.get("scope", "all"), target_bssid=data.get("target_bssid"))
     return jsonify(result), (200 if result["ok"] else 400)
 
 
@@ -147,8 +160,8 @@ def api_wids_status():
 
 @app.route("/api/wids/interfaces", methods=["GET"])
 def api_wids_interfaces():
-    """List real wireless interfaces; unlike scan, this never returns stubs."""
-    return jsonify({"interfaces": wids.list_interfaces()})
+    """List real wireless interfaces, preferring the TP-Link WIDS adapter."""
+    return jsonify(interface_choices(wids.list_interfaces(), "wids"))
 
 
 @app.route("/api/logs", methods=["GET"])

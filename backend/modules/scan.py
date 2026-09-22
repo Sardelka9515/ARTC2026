@@ -2,12 +2,12 @@
 Wireless scanning module.
 Wraps `iw` / `airodump-ng` for AP discovery.
 
-NOTE: This is a skeleton. In production, parse airodump-ng CSV output
-or use scapy with a monitor-mode interface.
+Only observations from real hardware are returned.
 """
 import subprocess
 import re
 import shutil
+from pathlib import Path
 
 
 def list_interfaces():
@@ -15,29 +15,45 @@ def list_interfaces():
     out = []
     try:
         r = subprocess.run(["iw", "dev"], capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            return []
         for m in re.finditer(r"Interface\s+(\S+)", r.stdout):
             out.append(m.group(1))
     except Exception:
         pass
-    if not out:
-        # fallback stub so the UI still renders in dev environments
-        out = ["wlan0", "wlan1", "wlan0mon"]
     return out
+
+
+def interface_choices(interfaces, role):
+    """Identify USB adapters without relying on unstable wlan numbering."""
+    labels = {}
+    preferred = None
+    for iface in interfaces:
+        try:
+            info = (Path('/sys/class/net') / iface / 'device/uevent').read_text()
+        except OSError:
+            info = ''
+        match = re.search(r'^PRODUCT=([0-9a-fA-F]+)/', info, re.MULTILINE)
+        vendor = int(match.group(1), 16) if match else None
+        brand = {0x0e8d: 'MediaTek', 0x2357: 'TP-Link'}.get(vendor)
+        labels[iface] = f'{iface} · {brand}' if brand else iface
+        if preferred is None and vendor == {'scan': 0x0e8d, 'wids': 0x2357}.get(role):
+            preferred = iface
+    return {'interfaces': interfaces, 'labels': labels, 'preferred': preferred}
 
 
 def scan_networks(iface="wlan0", duration=10):
     """
-    Passive scan for nearby APs.
+    Scan for nearby APs using the selected discovery adapter.
     Returns dicts containing bssid, ssid, channel, signal, encryption, wps,
     and pmf.
 
     Strategy:
       1. `iw dev <iface> scan` — works when the interface is in *managed* mode.
       2. If that yields nothing (e.g. the interface is in *monitor* mode, where
-         `iw scan` is unsupported), fall back to a passive scapy beacon sniff so
-         the *same monitor interface* used for WIDS also serves discovery.
-      3. If neither works (no hardware / no scapy), return a stub dataset so the
-         dashboard still renders.
+         `iw scan` is unsupported), fall back to a passive scapy beacon sniff
+         on the selected discovery adapter.
+      3. If neither yields observations, return an empty list.
     """
     if shutil.which("iw") is not None:
         try:
@@ -55,7 +71,7 @@ def scan_networks(iface="wlan0", duration=10):
     nets = _scapy_scan(iface, duration)
     if nets:
         return nets
-    return _stub_results()
+    return []
 
 
 def _scapy_scan(iface, duration=8):
@@ -242,18 +258,3 @@ def _parse_iw_scan(text):
         finish_current()
         nets.append(current)
     return nets
-
-
-def _stub_results():
-    """Fallback dataset so the dashboard renders without real hardware."""
-    return [
-        {"bssid": "AA:BB:CC:11:22:33", "ssid": "ARTC-TBOX-Test",
-         "channel": 6, "signal": -42, "encryption": "WPA2",
-         "wps": True, "pmf": "capable"},
-        {"bssid": "AA:BB:CC:44:55:66", "ssid": "Vehicle-Guest",
-         "channel": 11, "signal": -58, "encryption": "OPEN",
-         "wps": False, "pmf": "unknown"},
-        {"bssid": "AA:BB:CC:77:88:99", "ssid": "OTA-Secure",
-         "channel": 36, "signal": -61, "encryption": "WPA3",
-         "wps": False, "pmf": "required"},
-    ]

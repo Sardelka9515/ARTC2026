@@ -1,0 +1,22 @@
+{
+  "enabled": false,
+  "base_url": "http://172.16.42.1:1471",
+  "username": "root",
+  "password_env": "PINEAPPLE_PASSWORD",
+  "request_timeout": 5,
+  "target": {
+    "bssid": "",
+    "ssid": "",
+    "channel": 6,
+    "client_mac": ""
+  },
+  "deauth": {
+    "bursts": 5,
+    "interval_seconds": 1,
+    "multiplier": 1
+  },
+  "evil_twin": {
+    "bssid": "02:00:00:00:28:01",
+    "duration_seconds": 15
+  }
+}

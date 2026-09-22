@@ -11,6 +11,8 @@ import shutil
 import threading
 import subprocess
 import time
+import sys
+from pathlib import Path
 
 
 # ---- scenario -> command template map --------------------------------------
@@ -73,6 +75,7 @@ class AttackJob:
         self.started_at = None
         self.ended_at = None
         self.return_code = None
+        self.stop_requested = False
 
     def to_dict(self):
         return {
@@ -98,6 +101,32 @@ class AttackRunner:
         if scenario not in SCENARIOS:
             raise ValueError(f"unknown scenario: {scenario}")
 
+        engine = (params or {}).get("engine", "local")
+        if engine not in ("local", "pineapple"):
+            raise ValueError("unknown attack engine")
+        if engine == "pineapple":
+            if scenario not in ("deauth", "rogue_ap"):
+                raise ValueError("Pineapple currently supports deauth and rogue_ap only")
+            root = Path(__file__).resolve().parents[2]
+            config = Path(os.environ.get("PINEAPPLE_CONFIG", root / "configs/pineapple.local.json"))
+            if not config.is_file():
+                raise ValueError("尚未設定 Pineapple：請先建立 configs/pineapple.local.json")
+            # Never accept a config path or command from the browser.
+            cmd = shlex.join([sys.executable, "-u", str(root / "scripts/pineapple.py"),
+                              "deauth" if scenario == "deauth" else "evil-twin",
+                              "--config", str(config.resolve()), "--execute",
+                              "--bssid", str(params.get("bssid", "")),
+                              "--channel", str(params.get("channel", ""))])
+        else:
+            cmd = self._local_command(scenario, params)
+        job = AttackJob(job_id, scenario, cmd)
+        with self._lock:
+            self.jobs[job_id] = job
+        t = threading.Thread(target=self._run, args=(job,), daemon=True)
+        t.start()
+        return job
+
+    def _local_command(self, scenario, params):
         spec = SCENARIOS[scenario]
         merged = {**spec["defaults"], **(params or {})}
 
@@ -105,24 +134,18 @@ class AttackRunner:
         if missing:
             raise ValueError(f"missing required params: {missing}")
 
-        cmd = spec["cmd"].format(**merged)
-        job = AttackJob(job_id, scenario, cmd)
-
-        with self._lock:
-            self.jobs[job_id] = job
-
-        t = threading.Thread(target=self._run, args=(job,), daemon=True)
-        t.start()
-        return job
+        return spec["cmd"].format(**merged)
 
     def stop(self, job_id):
         with self._lock:
             job = self.jobs.get(job_id)
-        if not job or not job.proc:
+        if not job or job.status in ("finished", "killed", "error"):
             return False
+        job.stop_requested = True
+        if not job.proc:
+            return True
         try:
             job.proc.terminate()
-            job.status = "killed"
             return True
         except Exception:
             return False
@@ -132,7 +155,7 @@ class AttackRunner:
             return [j.to_dict() for j in self.jobs.values()]
 
     # ---- worker -------------------------------------------------------------
-    def _emit(self, job_id, channel, payload):
+    def _emit(self, channel, payload):
         try:
             self.socketio.emit(channel, payload, namespace="/")
         except Exception:
@@ -158,13 +181,16 @@ class AttackRunner:
                 stderr=subprocess.STDOUT,
                 text=True, bufsize=1,
             )
+            if job.stop_requested:
+                job.proc.terminate()
             for line in job.proc.stdout:
                 line = line.rstrip()
                 self._emit("job_output", {"job_id": job.job_id, "line": line})
                 self.logger.info("attack", f"[{job.job_id}] {line}")
             job.proc.wait()
             job.return_code = job.proc.returncode
-            job.status = "finished" if job.return_code == 0 else "error"
+            job.status = ("killed" if job.stop_requested and job.return_code in (0, 130, -15)
+                          else "finished" if job.return_code == 0 else "error")
         except Exception as e:
             job.status = "error"
             self._emit("job_output",
@@ -187,9 +213,14 @@ class AttackRunner:
             "[+] done.",
         ]
         for line in fake:
+            if job.stop_requested:
+                job.status = "killed"
+                job.return_code = 130
+                job.ended_at = time.time()
+                self._emit("job_update", job.to_dict())
+                return
             self._emit("job_output", {"job_id": job.job_id, "line": line})
             self.logger.info("attack", f"[{job.job_id}] {line}")
-            time.sleep(0.4)
         job.status = "finished"
         job.return_code = 0
         job.ended_at = time.time()
