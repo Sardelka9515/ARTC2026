@@ -7,6 +7,7 @@ UN R155 / ISO-SAE 21434 oriented Wi-Fi security test UI skeleton.
 """
 import os
 import uuid
+import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 
@@ -33,6 +34,36 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
 logger = TestLogger(os.path.join(BASE_DIR, "logs"))
 runner = AttackRunner(socketio=socketio, logger=logger)
 wids = WIDSMonitor(socketio=socketio, logger=logger)
+
+
+# ---- interface contention guard --------------------------------------------
+# wlan0 does double duty: recon scans it in *managed* mode, then WIDS flips it
+# to *monitor* mode. A scan and WIDS must never hold the same adapter at once —
+# WIDS toggling the mode mid-scan (or a scan racing WIDS capture) breaks both.
+# Track which role holds each interface and refuse an overlapping claim.
+_iface_lock = threading.Lock()
+_iface_owner = {}  # iface -> "scan" | "wids"
+
+
+def _claim_iface(iface, owner):
+    """Atomically reserve `iface` for `owner`. Return the current holder if the
+    interface is already busy (claim refused), else None (claim granted)."""
+    with _iface_lock:
+        held = _iface_owner.get(iface)
+        if held is not None:
+            return held
+        _iface_owner[iface] = owner
+        return None
+
+
+def _release_iface(iface=None, owner=None):
+    """Release a specific interface, or every interface held by a given owner."""
+    with _iface_lock:
+        if iface is not None:
+            _iface_owner.pop(iface, None)
+        if owner is not None:
+            for held in [i for i, o in _iface_owner.items() if o == owner]:
+                _iface_owner.pop(held, None)
 
 
 # ---- page routes ------------------------------------------------------------
@@ -74,12 +105,18 @@ def api_scan():
     data = request.get_json() or {}
     iface = data.get("interface", "wlan0")
     duration = int(data.get("duration", 10))
+    held = _claim_iface(iface, "scan")
+    if held:
+        return jsonify({"ok": False,
+                        "error": f"介面 {iface} 正由 {held.upper()} 使用中；請先停止該工作或改用其他介面。"}), 409
     try:
         results = scan_networks(iface=iface, duration=duration)
         logger.info("scan", f"Scanned {len(results)} networks on {iface}")
         return jsonify({"ok": True, "networks": results})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        _release_iface(iface=iface)
 
 
 @app.route("/api/audit", methods=["POST"])
@@ -149,14 +186,26 @@ def api_wids_start():
     iface = data.get("interface", "")
     channel = data.get("channel")
     baseline = data.get("baseline")  # optional trusted [{bssid, ssid, channel}]
+    # Reserve the adapter before touching its mode, so a scan can't be racing it.
+    claimed = False
+    if iface:
+        held = _claim_iface(iface, "wids")
+        if held and held != "wids":
+            return jsonify({"ok": False,
+                            "error": f"介面 {iface} 正由 {held.upper()} 使用中；請先停止該工作再啟動 WIDS。",
+                            "status": wids.status()}), 409
+        claimed = held is None  # True only when this call newly reserved it
     result = wids.start(iface, baseline=baseline, channel=channel,
                         scope=data.get("scope", "all"), target_bssid=data.get("target_bssid"))
+    if not result["ok"] and claimed:
+        _release_iface(iface=iface)  # our claim failed to start → release it
     return jsonify(result), (200 if result["ok"] else 400)
 
 
 @app.route("/api/wids/stop", methods=["POST"])
 def api_wids_stop():
     result = wids.stop()
+    _release_iface(owner="wids")
     return jsonify(result), (200 if result["ok"] else 500)
 
 
@@ -167,7 +216,7 @@ def api_wids_status():
 
 @app.route("/api/wids/interfaces", methods=["GET"])
 def api_wids_interfaces():
-    """List real wireless interfaces, preferring the TP-Link WIDS adapter."""
+    """List real wireless interfaces, preferring the recon/WIDS adapter (wlan0)."""
     return jsonify(interface_choices(wids.list_interfaces(), "wids"))
 
 
