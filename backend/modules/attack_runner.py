@@ -3,7 +3,9 @@ Attack runner — manages long-running attack/test subprocesses
 and streams stdout/stderr lines to the frontend via Socket.IO.
 
 Primary engine: wifite2  (https://github.com/kimocoder/wifite2)
-Fallbacks: aireplay-ng, hostapd, reaver, bully, hcxdumptool
+Fallbacks: aireplay-ng, reaver, bully, hcxdumptool
+Evil Twin (rogue_ap) runs on the WiFi Pineapple over eth1 (engine=pineapple),
+not local hostapd.
 """
 import os
 import shlex

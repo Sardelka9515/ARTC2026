@@ -589,8 +589,8 @@ async function runAttackSim() {
     return { ok: false, summary: "Deauth 測試未完成，已停止後續攻擊測試。" };
   }
 
-  log("② 架設釣魚熱點（Rogue AP / Evil Twin）…", "info");
-  const d2 = await runScenarioJob("rogue_ap", { config_path: "configs/eviltwin.conf" });
+  log("② 架設釣魚熱點（Rogue AP / Evil Twin）— WiFi Pineapple over eth1 …", "info");
+  const d2 = await runScenarioJob("rogue_ap");
   setCheckState("attacksim", "rogue_ap", d2.ok ? "pass" : "fail",
     d2.ok ? `腳本完成，輸出 ${d2.lines} 行。` : `腳本狀態：${d2.status}`);
 

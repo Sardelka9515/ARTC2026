@@ -111,7 +111,7 @@ def api_attack_start():
     Supported scenarios:
       - wifite_auto   : full wifite2 run against a target BSSID
       - deauth        : 802.11 deauth flood (aireplay-ng)
-      - rogue_ap      : spawn Evil Twin (hostapd)
+      - rogue_ap      : spawn Evil Twin (WiFi Pineapple over eth1; engine=pineapple)
       - wps_bruteforce: reaver/bully against WPS PIN
       - pmf_probe     : verify 802.11w handling
       - handshake_cap : capture WPA handshake

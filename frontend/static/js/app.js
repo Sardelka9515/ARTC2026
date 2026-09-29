@@ -183,6 +183,8 @@ $("#atk-start").addEventListener("click", async () => {
     try { Object.assign(params, JSON.parse(extra)); }
     catch { return alert("Extra params must be valid JSON"); }
   }
+  // Evil Twin runs on the WiFi Pineapple (over eth1); there is no local engine.
+  if (scenario === "rogue_ap" && !params.engine) params.engine = "pineapple";
   const r = await fetch("/api/attack/start", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
