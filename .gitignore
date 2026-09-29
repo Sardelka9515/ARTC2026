@@ -4,3 +4,4 @@ __pycache__
 /configs/pineapple.local.json
 /configs/*.recovery.json
 /configs/*.lock
+.venv

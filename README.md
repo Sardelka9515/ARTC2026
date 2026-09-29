@@ -54,10 +54,27 @@ python app.py
 # open http://localhost:5000
 ```
 
+## Bench interface layout (fixed 3-radio setup)
+
+The platform is wired for a fixed three-interface bench, each pinned to one role:
+
+| Interface | Hardware        | Role                                             |
+|-----------|-----------------|--------------------------------------------------|
+| `wlan0`   | MediaTek        | Recon / scan (spec 檢測項目 1–4), then **reused** for WIDS monitor |
+| `wlan1`   | TP-Link         | Deauth (aireplay-ng, local engine)               |
+| `eth1`    | WiFi Pineapple  | Evil Twin — driven over the Pineapple REST API; **no local hostapd** |
+
+`wlan0` does double duty: it runs recon first, then flips to monitor mode for
+WIDS. `wlan1` fires deauth and the Pineapple broadcasts the evil twin
+concurrently, so WIDS on `wlan0` can observe both. Role→interface defaults live
+in `interface_choices()` (`backend/modules/scan.py`); the deauth radio is chosen
+via `GET /api/attack/interfaces`. Evil Twin (`rogue_ap`) runs on the Pineapple
+engine only.
+
 ## Install the real tooling (Kali / Parrot recommended)
 
 ```bash
-sudo apt install aircrack-ng reaver bully hostapd hcxdumptool
+sudo apt install aircrack-ng reaver bully hcxdumptool  # hostapd not needed: evil twin runs on the Pineapple
 git clone https://github.com/kimocoder/wifite2
 cd wifite2 && sudo python setup.py install
 pip install scapy
@@ -83,7 +100,8 @@ All activity is logged to `logs/testing.jsonl` for audit (ISO 21434 traceability
 
 ## WiFi Pineapple Mark VII
 
-The root dashboard's item 28 can use a USB-connected Pineapple via its REST API.
+Item 28's Evil Twin always runs on the USB-connected Pineapple (over `eth1`) via
+its REST API; deauth stays local on `wlan1`. There is no local hostapd evil-twin.
 Start with `configs/pineapple.example.json` and the Traditional Chinese guide:
 [USB / VM setup, test configuration, WIDS baseline and recovery](docs/PINEAPPLE_SETUP_ZH.md).
 The controller is `scripts/pineapple.py`; `plan` is offline, and hardware operation

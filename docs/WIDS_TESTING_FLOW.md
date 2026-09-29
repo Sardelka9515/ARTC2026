@@ -11,6 +11,12 @@ Background, root-cause analysis, and results are in
 
 ## Hardware roles
 
+> **Current bench (canonical):** the platform is now wired for the fixed
+> 3-radio setup in the [README](../README.md#bench-interface-layout-fixed-3-radio-setup) —
+> `wlan0` (MediaTek) recon + WIDS, `wlan1` (TP-Link) deauth, `eth1` Pineapple
+> evil twin. The adapter-specific notes below are a historical bring-up trial
+> (AIC8800DC / Realtek) kept for troubleshooting reference.
+
 | Role | Adapter | Interface | Why |
 |---|---|---|---|
 | **WIDS monitor / capture** | Realtek RTL8821CU (`rtw88_8821cu`, mac80211) | `wlx90de80e1832b` (phy0) | monitor RX delivers real 802.11 frames |

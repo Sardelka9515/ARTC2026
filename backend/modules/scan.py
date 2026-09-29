@@ -24,10 +24,21 @@ def list_interfaces():
     return out
 
 
+# Fixed 3-radio bench mapping (see README). Interface names are pinned per role:
+#   wlan0 (MediaTek)  → recon/scan (spec items 1–4), then reused for WIDS
+#   wlan1 (TP-Link)   → deauth
+#   eth1  (Pineapple) → evil twin, driven over REST (not an `iw dev` interface)
+ROLE_INTERFACE = {'scan': 'wlan0', 'wids': 'wlan0', 'deauth': 'wlan1'}
+
+
 def interface_choices(interfaces, role):
-    """Identify USB adapters without relying on unstable wlan numbering."""
+    """Pin each role to its bench interface by name.
+
+    `preferred` is the role's pinned interface when present, otherwise the first
+    available interface (so the UI still offers a usable default on a re-numbered
+    or partial bench). USB-vendor brand labels are kept for display only.
+    """
     labels = {}
-    preferred = None
     for iface in interfaces:
         try:
             info = (Path('/sys/class/net') / iface / 'device/uevent').read_text()
@@ -37,8 +48,12 @@ def interface_choices(interfaces, role):
         vendor = int(match.group(1), 16) if match else None
         brand = {0x0e8d: 'MediaTek', 0x2357: 'TP-Link'}.get(vendor)
         labels[iface] = f'{iface} · {brand}' if brand else iface
-        if preferred is None and vendor == {'scan': 0x0e8d, 'wids': 0x2357}.get(role):
-            preferred = iface
+
+    want = ROLE_INTERFACE.get(role)
+    if want in interfaces:
+        preferred = want
+    else:
+        preferred = interfaces[0] if interfaces else None
     return {'interfaces': interfaces, 'labels': labels, 'preferred': preferred}
 
 

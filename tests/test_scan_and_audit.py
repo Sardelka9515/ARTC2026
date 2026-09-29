@@ -26,14 +26,25 @@ class RealDiscoveryTests(unittest.TestCase):
         with patch('modules.scan.subprocess.run', side_effect=OSError('missing iw')):
             self.assertEqual(list_interfaces(), [])
 
-    def test_roles_follow_vendor_when_interface_names_change(self):
+    def test_roles_pin_to_bench_interface_names(self):
+        # Fixed 3-radio bench: recon and WIDS reuse wlan0, deauth uses wlan1.
+        ifaces = ['wlan0', 'wlan1']
+        with patch.object(Path, 'read_text', side_effect=OSError):
+            self.assertEqual(interface_choices(ifaces, 'scan')['preferred'], 'wlan0')
+            self.assertEqual(interface_choices(ifaces, 'wids')['preferred'], 'wlan0')
+            self.assertEqual(interface_choices(ifaces, 'deauth')['preferred'], 'wlan1')
+            # Pinned name missing → fall back to the first available interface.
+            self.assertEqual(interface_choices(['wlanX'], 'deauth')['preferred'], 'wlanX')
+            # No interfaces at all → no preferred choice.
+            self.assertIsNone(interface_choices([], 'scan')['preferred'])
+
+    def test_vendor_brand_labels_are_kept_for_display(self):
         def read(path):
             return 'PRODUCT=e8d/7961/100\n' if 'wlan0' in str(path) else 'PRODUCT=2357/120/200\n'
         with patch.object(Path, 'read_text', read):
-            self.assertEqual(interface_choices(['wlan0', 'wlan1'], 'scan')['preferred'], 'wlan0')
-            self.assertEqual(interface_choices(['wlan0', 'wlan1'], 'wids')['preferred'], 'wlan1')
-        with patch.object(Path, 'read_text', side_effect=OSError):
-            self.assertIsNone(interface_choices(['wlan0'], 'scan')['preferred'])
+            labels = interface_choices(['wlan0', 'wlan1'], 'scan')['labels']
+        self.assertEqual(labels['wlan0'], 'wlan0 · MediaTek')
+        self.assertEqual(labels['wlan1'], 'wlan1 · TP-Link')
 
 
 class IwScanParserTests(unittest.TestCase):

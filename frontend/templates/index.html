@@ -63,7 +63,7 @@
     <div class="target-bar">
       <label>受測目標 BSSID<input id="cfg-bssid" placeholder="選擇網路或輸入 BSSID"></label>
       <label>頻道<input id="cfg-channel" type="number" value="6" min="1" max="233"></label>
-      <label>第 28 項攻擊裝置<select id="attack-engine"><option value="pineapple">WiFi Pineapple VII</option><option value="local">本機工具</option></select></label>
+      <label>Deauth 介面<small>（TP-Link / wlan1；Evil Twin 由 Pineapple 經 eth1 執行）</small><select id="attack-iface"><option value="">載入中…</option></select></label>
       <div class="run-actions"><button id="run-btn" class="primary big">▶ 開始檢測</button><button id="reset-btn" class="ghost">↺ 重設</button><button id="scenario-stop" class="danger" disabled>停止攻擊測試</button></div>
     </div>
     <p id="target-note" class="target-note" role="status">請先選擇受測目標，再開始檢測流程。</p>

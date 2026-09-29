@@ -48,12 +48,15 @@ SCENARIOS = {
         "requires": ["bssid", "channel", "interface"],
         "defaults": {},
     },
-    # Evil Twin / Rogue AP via hostapd — checks client-side validation.
+    # Evil Twin / Rogue AP — Pineapple only (engine="pineapple"); no local
+    # engine exists. The Pineapple broadcasts the twin, driven over REST via
+    # eth1. Kept here as a known scenario name for validation and the UI.
     "rogue_ap": {
-        "cmd": "hostapd {config_path}",
-        "desc": "Spawn Evil Twin access point (hostapd)",
-        "requires": ["config_path"],
+        "cmd": None,
+        "desc": "Spawn Evil Twin access point (WiFi Pineapple over eth1)",
+        "requires": [],
         "defaults": {},
+        "pineapple_only": True,
     },
     # PMF probe — sends spoofed mgmt frames and observes rejection.
     "pmf_probe": {
@@ -104,6 +107,8 @@ class AttackRunner:
         engine = (params or {}).get("engine", "local")
         if engine not in ("local", "pineapple"):
             raise ValueError("unknown attack engine")
+        if SCENARIOS[scenario].get("pineapple_only") and engine != "pineapple":
+            raise ValueError(f"{scenario} runs on the Pineapple only (engine='pineapple')")
         if engine == "pineapple":
             if scenario not in ("deauth", "rogue_ap"):
                 raise ValueError("Pineapple currently supports deauth and rogue_ap only")

@@ -61,6 +61,13 @@ def api_interfaces():
     return jsonify(interface_choices(list_interfaces(), "scan"))
 
 
+@app.route("/api/attack/interfaces", methods=["GET"])
+def api_attack_interfaces():
+    """List wireless interfaces for the deauth step, preferring the TP-Link (wlan1)."""
+    from modules.scan import list_interfaces
+    return jsonify(interface_choices(list_interfaces(), "deauth"))
+
+
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
     """Passive scan of nearby APs. Returns BSSID/SSID/channel/encryption."""

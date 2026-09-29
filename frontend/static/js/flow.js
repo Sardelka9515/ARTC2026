@@ -351,8 +351,17 @@ function runScenarioJob(scenario, extra) {
     socket.on("job_update", onUpd);
     (async () => {
       try {
-        const params = Object.assign({interface: ctx.iface, bssid: ctx.bssid, channel: ctx.channel || 6}, extra || {});
-        if (["deauth", "rogue_ap"].includes(scenario)) params.engine = $("#attack-engine")?.value || "local";
+        const params = Object.assign({bssid: ctx.bssid, channel: ctx.channel || 6}, extra || {});
+        // Fixed 3-radio bench: deauth on the TP-Link (wlan1), evil twin on the
+        // Pineapple (eth1, REST). Everything else uses the recon/WIDS radio (wlan0).
+        if (scenario === "rogue_ap") {
+          params.engine = "pineapple";
+        } else if (scenario === "deauth") {
+          params.engine = "local";
+          params.interface = $("#attack-iface")?.value || ctx.iface;
+        } else {
+          params.interface = ctx.iface;
+        }
         const result = await postJSON("/api/attack/start", {scenario, params});
         if (!result.ok) {
           log(`啟動 ${scenario} 失敗：${result.error}`, "fail");
@@ -760,11 +769,11 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
 }
-async function loadInterfaces() {
-  const sel = $("#cfg-iface");
+async function populateInterfaceSelect(sel, endpoint, initialIface) {
+  if (!sel) return;
   sel.innerHTML = '<option value="">載入中…</option>';
   try {
-    const r = await fetch("/api/interfaces");
+    const r = await fetch(endpoint);
     const d = await r.json();
     sel.replaceChildren();
     (d.interfaces || []).forEach(i => {
@@ -776,12 +785,19 @@ async function loadInterfaces() {
       sel.innerHTML = '<option value="">找不到無線介面</option>';
       return;
     }
-    const iface = initialParams.get("iface");
-    if (d.interfaces.includes(iface)) sel.value = iface;
+    if (initialIface && d.interfaces.includes(initialIface)) sel.value = initialIface;
     else if (d.interfaces.includes(d.preferred)) sel.value = d.preferred;
   } catch (e) {
     sel.innerHTML = '<option value="">無法取得介面清單</option>';
   }
+}
+
+async function loadInterfaces() {
+  // Recon/WIDS radio (wlan0) and the deauth radio (wlan1) are picked separately.
+  await Promise.all([
+    populateInterfaceSelect($("#cfg-iface"), "/api/interfaces", initialParams.get("iface")),
+    populateInterfaceSelect($("#attack-iface"), "/api/attack/interfaces", null),
+  ]);
 }
 
 function applyInitialTarget() {
