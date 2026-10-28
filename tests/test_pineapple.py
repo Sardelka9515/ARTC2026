@@ -48,6 +48,14 @@ class FakeClient:
 
 
 class PineappleTests(unittest.TestCase):
+    def test_ssid_pool_accepts_firmware_response_variants(self):
+        for value in ('one\ntwo', ['one', 'two'], {'ssids': ['one', 'two']},
+                      {'pool': 'one\ntwo'}):
+            self.assertEqual(p.parse_ssid_pool(value), ['one', 'two'])
+        self.assertEqual(p.parse_ssid_pool(None), [])
+        with self.assertRaises(p.PineappleError):
+            p.parse_ssid_pool({'unexpected': True})
+
     def test_wrapped_settings_round_trip_preserves_mode_and_extra_fields(self):
         values = FakeClient().values
         values['autostartPineAP'] = values.pop('AutoStart')
@@ -60,8 +68,46 @@ class PineappleTests(unittest.TestCase):
         self.assertIs(normalized['AutoStart'], False)
         client.request.return_value = {'success': True}
         client.mutate('PUT', p.SETTINGS, normalized)
-        client.request.assert_called_with('PUT', p.SETTINGS, wire)
+        expected = copy.deepcopy(wire)
+        expected['settings'].pop('evil_ap_handshakes', None)
+        client.request.assert_called_with('PUT', p.SETTINGS, expected)
         self.assertIn('_mode', normalized)
+
+    def test_wrapped_firmware_base64_encodes_ssid_mutations(self):
+        client = p.Client(config())
+        client.wrapped_settings = True
+        client.request = Mock(return_value={'success': True})
+        client.mutate('PUT', p.SSID, {'ssid': 'T-BOX'})
+        client.request.assert_called_once_with('PUT', p.SSID, {'ssid': 'VC1CT1g='})
+
+    def test_wrapped_firmware_uses_wpa_twin_and_restores(self):
+        class WpaClient:
+            base = 'http://172.16.42.1:1471'
+            def __init__(self):
+                self.open = {'ssid': 'Pineapple', 'country': 'US', 'channel': 8, 'hidden': False}
+                self.wpa = {'ssid': 'old', 'bssid': '02:11:22:33:44:77', 'auth': 'psk2+ccmp',
+                            'password': 'old-password', 'hidden': False, 'disabled': True,
+                            'capture_handshakes': True}
+            def request(self, method, path, body=None):
+                return copy.deepcopy(self.open if path == p.OPEN_AP else self.wpa)
+            def mutate(self, method, path, body):
+                value = copy.deepcopy(body)
+                value.pop('confirm_password', None)
+                if path == p.OPEN_AP:
+                    self.open = value
+                else:
+                    self.wpa = value
+        client = WpaClient()
+        original_open, original_wpa = copy.deepcopy(client.open), copy.deepcopy(client.wpa)
+        def inspect(_):
+            self.assertEqual(client.open['channel'], 6)
+            self.assertEqual(client.wpa['ssid'], 'ARTC-LAB')
+            self.assertEqual(client.wpa['bssid'], '02:11:22:33:44:55'.upper())
+            self.assertFalse(client.wpa['capture_handshakes'])
+        with tempfile.TemporaryDirectory() as folder, patch('sys.stdout', new=io.StringIO()):
+            p.run_evil_twin_wpa(client, config(), Path(folder) / 'recovery.json', sleep=inspect)
+        self.assertEqual(client.open, original_open)
+        self.assertEqual(client.wpa, original_wpa)
 
     def test_settings_rejects_invalid_wrapped_values(self):
         values = FakeClient().values
@@ -92,7 +138,7 @@ class PineappleTests(unittest.TestCase):
             self.assertEqual(client.pool, config()['target']['ssid'])
         with tempfile.TemporaryDirectory() as folder, patch('sys.stdout', new=io.StringIO()):
             p.run_evil_twin(client, config(), Path(folder) / 'recovery.json', sleep=inspect)
-        self.assertEqual(during['pineap_mac'], config()['target']['bssid'])
+        self.assertEqual(during['pineap_mac'], config()['target']['bssid'].upper())
         self.assertEqual(during['ap_channel'], str(config()['target']['channel']))
 
     def test_evil_twin_rejects_a_different_clone_mac(self):
@@ -163,13 +209,15 @@ class PineappleTests(unittest.TestCase):
                 self.assertEqual(client.pool, '')
                 self.assertFalse(snapshot.exists())
 
-    def test_existing_pool_is_not_overwritten(self):
+    def test_active_pineap_and_existing_pool_are_restored(self):
         client = FakeClient()
+        client.values.update(enablePineAP=True, AutoStart=True)
         client.pool = 'unrelated-network'
-        with tempfile.TemporaryDirectory() as folder:
-            with self.assertRaises(p.PineappleError):
-                p.run_evil_twin(client, config(), Path(folder) / 'recovery.json')
-        self.assertEqual(client.calls, [])
+        original = client.settings()
+        with tempfile.TemporaryDirectory() as folder, patch('sys.stdout', new=io.StringIO()):
+            p.run_evil_twin(client, config(), Path(folder) / 'recovery.json', sleep=lambda _: None)
+        self.assertEqual(client.settings(), original)
+        self.assertEqual(client.pool, 'unrelated-network')
 
     def test_restore_failure_keeps_recovery(self):
         client = FakeClient()

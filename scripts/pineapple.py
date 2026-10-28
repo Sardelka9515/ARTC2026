@@ -5,6 +5,7 @@ Uses the documented MK7 REST API, no extra Python dependencies. Configuration
 and pending recovery state are server-side, never supplied by browser clients.
 """
 import argparse
+import base64
 import copy
 import fcntl
 import getpass
@@ -12,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -24,10 +26,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs/pineapple.local.json"
 SETTINGS = "/api/pineap/settings"
 SSID = "/api/pineap/ssids/ssid"
+OPEN_AP = "/api/settings/networking/ap/open"
+WPA_AP = "/api/settings/networking/ap/wpa"
 FIELDS = {"enablePineAP", "AutoStart", "ap_channel", "beacon_interval",
           "beacon_response_interval", "beacon_responses", "broadcast_ssid_pool",
           "capture_ssids", "connect_notifications", "disconnect_notifications",
           "karma", "logging", "pineap_mac", "target_mac"}
+WRITABLE_FIELDS = FIELDS | {"armedPineAP", "broadcast_ssid_pool_random"}
 
 
 class PineappleError(Exception):
@@ -109,6 +114,7 @@ class Client:
             raise PineappleError("base_url 應為 http(s)://裝置位址:連接埠。")
         self.timeout = bounded(config.get("request_timeout", 5), 1, 10, "request_timeout")
         self.token = None
+        self.wrapped_settings = False
         # Do not send local device credentials through environment HTTP proxies.
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
         self.config = config
@@ -146,10 +152,16 @@ class Client:
 
     def mutate(self, method, path, body):
         if path == SETTINGS and method == "PUT" and "_mode" in body:
+            self.wrapped_settings = True
             body = copy.deepcopy(body)
             mode = body.pop("_mode")
             body["autostartPineAP"] = body.pop("AutoStart")
+            body = {key: value for key, value in body.items()
+                    if key in (WRITABLE_FIELDS - {"AutoStart"}) | {"autostartPineAP"}}
             body = {"mode": mode, "settings": body}
+        elif path == SSID and self.wrapped_settings:
+            body = copy.deepcopy(body)
+            body["ssid"] = base64.b64encode(body["ssid"].encode()).decode()
         result = self.request(method, path, body)
         if not isinstance(result, dict) or result.get("success") is not True:
             raise PineappleError(f"{path}: 缺少 success=true，無法確認操作成功。")
@@ -170,6 +182,7 @@ class Client:
         # Newer firmware wraps settings and renames AutoStart. Keep the mode
         # and all additional settings so a recovery can restore them exactly.
         if isinstance(settings, dict) and "settings" in settings:
+            self.wrapped_settings = True
             mode, values = settings.get("mode"), settings["settings"]
             if not isinstance(mode, str) or not mode or not isinstance(values, dict):
                 raise PineappleError("PineAP settings 包裝格式不符，未變更裝置。")
@@ -195,20 +208,72 @@ def save_snapshot(path, snapshot):
         os.fsync(stream.fileno())
 
 
-def restore(client, path):
+def parse_ssid_pool(value):
+    """Normalize documented text and newer firmware's JSON-wrapped pool."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return value.splitlines()
+    if isinstance(value, list) and all(isinstance(name, str) for name in value):
+        return value
+    if isinstance(value, dict):
+        for key in ("ssids", "pool"):
+            if key in value:
+                return parse_ssid_pool(value[key])
+    raise PineappleError(f"SSID pool 格式不符（{type(value).__name__}），未變更裝置。")
+
+
+def restore(client, path, sleep=time.sleep):
     snapshot = json.loads(path.read_text())
     if snapshot.get("base_url") != client.base:
         raise PineappleError("復原檔的裝置位址不符。")
-    # Restore the original settings first, stopping our beacon transmission.
+    if snapshot.get("strategy") == "wpa":
+        original_wpa = copy.deepcopy(snapshot["wpa_ap"])
+        if "password" in original_wpa:
+            original_wpa["confirm_password"] = original_wpa["password"]
+        client.mutate("PUT", OPEN_AP, snapshot["open_ap"])
+        client.mutate("PUT", WPA_AP, original_wpa)
+        current_open = client.request("GET", OPEN_AP)
+        current_wpa = client.request("GET", WPA_AP)
+        checked_wpa = ("ssid", "bssid", "auth", "hidden", "disabled", "enabled",
+                       "capture_handshakes")
+        if (not isinstance(current_open, dict) or not isinstance(current_wpa, dict)
+                or int(current_open.get("channel", 0)) != int(snapshot["open_ap"].get("channel", 0))
+                or any(key in snapshot["wpa_ap"] and current_wpa.get(key) != snapshot["wpa_ap"].get(key)
+                       for key in checked_wpa)):
+            raise PineappleError("裝置尚未還原 Evil WPA/Open AP 設定，保留復原檔。")
+        path.unlink()
+        print("[restore] Evil WPA/Open AP 設定已還原。", flush=True)
+        return
+    # Stop transmission while restoring the exact pre-test SSID pool.
+    quiet = copy.deepcopy(snapshot["settings"])
+    quiet.update(enablePineAP=False, AutoStart=False, armedPineAP=False,
+                 broadcast_ssid_pool_random=False)
+    client.mutate("PUT", SETTINGS, quiet)
+    current = parse_ssid_pool(client.request("GET", "/api/pineap/ssids"))
+    original = snapshot.get("ssids", [])  # Old recovery files assumed an empty pool.
+    for name in current:
+        if name not in original:
+            client.mutate("DELETE", SSID, {"ssid": name})
+    for name in original:
+        if name not in current:
+            client.mutate("PUT", SSID, {"ssid": name})
     client.mutate("PUT", SETTINGS, snapshot["settings"])
-    pool = client.request("GET", "/api/pineap/ssids")
-    if not isinstance(pool, str):
-        raise PineappleError("SSID pool 格式不符，保留復原檔。")
-    if snapshot["ssid"] in pool.splitlines():
-        client.mutate("DELETE", SSID, {"ssid": snapshot["ssid"]})
-    current = client.settings()
-    if current != snapshot["settings"]:
-        raise PineappleError("裝置尚未還原原始設定，保留復原檔。")
+    # PineAP start/stop is asynchronous; verify writable settings, not
+    # read-only firmware fields such as handshake paths and counters.
+    compared = FIELDS | ({"_mode"} if "_mode" in snapshot["settings"] else set())
+    for attempt in range(6):
+        current = client.settings()
+        pool = parse_ssid_pool(client.request("GET", "/api/pineap/ssids"))
+        changed = sorted(key for key in compared
+                         if current.get(key) != snapshot["settings"].get(key))
+        if not changed and pool == original:
+            break
+        if attempt < 5:
+            sleep(1)
+    else:
+        detail = f"settings={','.join(changed) or 'ok'}, ssid_pool={'changed' if pool != original else 'ok'}"
+        raise PineappleError(f"裝置尚未還原原始設定（{detail}），保留復原檔。")
     path.unlink()
     print("[restore] PineAP 設定已還原，本次測試 SSID 已移除。", flush=True)
 
@@ -225,29 +290,95 @@ def run_deauth(client, config, sleep=time.sleep):
             sleep(cfg["interval_seconds"])
 
 
-def run_evil_twin(client, config, snapshot_path, sleep=time.sleep):
+def run_evil_twin(client, config, snapshot_path, sleep=time.sleep, wait=time.sleep):
     original = client.settings()
-    if original["enablePineAP"] or original["AutoStart"]:
-        raise PineappleError("請先在裝置管理頁停止 PineAP 並關閉自動啟動，再執行此獨立測試。")
-    pool = client.request("GET", "/api/pineap/ssids")
-    if not isinstance(pool, str) or pool.strip():
-        raise PineappleError("此測試需要空的 SSID pool；請先自行備份並在管理頁清空。")
+    if getattr(client, "wrapped_settings", False):
+        return run_evil_twin_wpa(client, config, snapshot_path, sleep)
+    pool = parse_ssid_pool(client.request("GET", "/api/pineap/ssids"))
     target, evil = config["target"], config["evil_twin"]
-    save_snapshot(snapshot_path, {"base_url": client.base, "settings": original, "ssid": target["ssid"]})
+    original_ssids = pool
+    save_snapshot(snapshot_path, {"base_url": client.base, "settings": original,
+                                  "ssids": original_ssids})
     settings = copy.deepcopy(original)
     if "_mode" in settings:
         settings["_mode"] = "advanced"
-    settings.update(enablePineAP=True, AutoStart=False, ap_channel=str(target["channel"]),
+    settings.update(enablePineAP=True, AutoStart=False, armedPineAP=False,
+                    broadcast_ssid_pool_random=False, ap_channel=str(target["channel"]),
                     broadcast_ssid_pool=True, capture_ssids=False, beacon_responses=False,
-                    karma=False, logging=True, pineap_mac=target["bssid"], target_mac="ff:ff:ff:ff:ff:ff")
+                    karma=False, logging=True, pineap_mac=target["bssid"].upper(),
+                    target_mac="FF:FF:FF:FF:FF:FF")
     try:
-        client.mutate("PUT", SSID, {"ssid": target["ssid"]})
+        quiet = copy.deepcopy(original)
+        quiet.update(enablePineAP=False, AutoStart=False, armedPineAP=False,
+                     broadcast_ssid_pool_random=False)
+        if "_mode" in quiet:
+            quiet["_mode"] = "advanced"
+        client.mutate("PUT", SETTINGS, quiet)
+        quiet_keys = {"enablePineAP", "AutoStart"}
+        for attempt in range(6):
+            current = client.settings()
+            if all(current.get(key) == quiet.get(key) for key in quiet_keys):
+                break
+            if attempt < 5:
+                wait(1)
+        if target["ssid"] not in original_ssids:
+            client.mutate("PUT", SSID, {"ssid": target["ssid"]})
         client.mutate("PUT", SETTINGS, settings)
-        current = client.settings()
-        if any(current[key] != value for key, value in settings.items()):
-            raise PineappleError("裝置未套用預期 PineAP 設定；開始還原。")
+        compared = FIELDS | ({"_mode"} if "_mode" in settings else set())
+        compared |= {key for key in ("armedPineAP", "broadcast_ssid_pool_random") if key in original}
+        for attempt in range(6):
+            current = client.settings()
+            changed = sorted(key for key in compared if current.get(key) != settings.get(key))
+            if not changed:
+                break
+            if attempt < 5:
+                wait(1)
+        else:
+            detail = ", ".join(f"{key}={settings.get(key)!r}->{current.get(key)!r}" for key in changed)
+            raise PineappleError(f"裝置未套用預期 PineAP 設定（{detail}）；開始還原。")
         print(f"[evil-twin] 正以相同 SSID/BSSID/頻道廣播，{evil['duration_seconds']} 秒後還原；"
               "不啟用自動接入或憑證蒐集。", flush=True)
+        sleep(evil["duration_seconds"])
+    finally:
+        try:
+            restore(client, snapshot_path)
+        except Exception as exc:
+            raise PineappleError(f"還原未完成：{exc}。重新接線後執行 restore；復原檔：{snapshot_path}") from None
+
+
+def run_evil_twin_wpa(client, config, snapshot_path, sleep=time.sleep):
+    original_open = client.request("GET", OPEN_AP)
+    original_wpa = client.request("GET", WPA_AP)
+    if not isinstance(original_open, dict) or not isinstance(original_wpa, dict):
+        raise PineappleError("Open AP / Evil WPA 設定格式不符，未變更裝置。")
+    if "channel" not in original_open or not ({"disabled", "enabled"} & set(original_wpa)):
+        raise PineappleError("Open AP / Evil WPA 設定缺少必要欄位，未變更裝置。")
+    save_snapshot(snapshot_path, {"base_url": client.base, "strategy": "wpa",
+                                  "open_ap": original_open, "wpa_ap": original_wpa})
+    target, evil = config["target"], config["evil_twin"]
+    test_open = copy.deepcopy(original_open)
+    test_open["channel"] = target["channel"]
+    password = secrets.token_urlsafe(12)
+    test_wpa = copy.deepcopy(original_wpa)
+    test_wpa.update(ssid=target["ssid"], bssid=target["bssid"].upper(),
+                    auth="psk2+ccmp", password=password, confirm_password=password,
+                    hidden=False, capture_handshakes=False)
+    if "disabled" in test_wpa:
+        test_wpa["disabled"] = False
+    if "enabled" in test_wpa:
+        test_wpa["enabled"] = True
+    try:
+        client.mutate("PUT", OPEN_AP, test_open)
+        client.mutate("PUT", WPA_AP, test_wpa)
+        current_open = client.request("GET", OPEN_AP)
+        current_wpa = client.request("GET", WPA_AP)
+        if (not isinstance(current_open, dict) or not isinstance(current_wpa, dict)
+                or int(current_open.get("channel", 0)) != target["channel"]
+                or current_wpa.get("ssid") != target["ssid"]
+                or str(current_wpa.get("bssid", "")).lower() != target["bssid"].lower()):
+            raise PineappleError("裝置未套用預期 Evil WPA Twin 設定；開始還原。")
+        print(f"[evil-twin] Evil WPA Twin 正以相同 SSID/BSSID 於頻道 {target['channel']} 廣播，"
+              f"{evil['duration_seconds']} 秒後還原；已關閉握手擷取。", flush=True)
         sleep(evil["duration_seconds"])
     finally:
         try:
@@ -288,9 +419,10 @@ def main(argv=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise PineappleError("此 Pineapple 設定已有工作執行中。") from None
-        if snapshot.exists() and args.action not in ("restore", "check"):
-            raise PineappleError("偵測到未完成復原，請先執行 restore。")
         client.login()
+        if snapshot.exists() and args.action not in ("restore", "check"):
+            print("[recovery] 偵測到上次未完成復原，先還原裝置。", flush=True)
+            restore(client, snapshot)
         if args.action == "check":
             settings = client.settings()
             print(json.dumps({"connected": True, "enablePineAP": settings["enablePineAP"],

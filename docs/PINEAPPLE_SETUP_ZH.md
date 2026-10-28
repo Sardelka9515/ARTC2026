@@ -11,7 +11,7 @@
 - 未登入讀取 `/api/pineap/settings` 回應 HTTP 401；後續使用者執行 `check` 已通過登入，原腳本在 settings 格式檢查失敗。
 - 已核對實機管理頁程式：settings API 使用 `{mode, settings}` 包裝，自動啟動欄位為 `autostartPineAP`。腳本已加入此格式的讀寫相容處理，保留原模式及額外設定供復原；待重新執行實機 `check` 確認。
 - 已建立 `configs/pineapple.local.json`（權限 `0600`），現有腳本與後端會預設讀取此檔。測試目標尚未填入，`enabled` 保持 `false`。
-- 現有 Pineapple 整合的 15 項模擬測試通過；這不代表實機無線測試通過。
+- 現有 Pineapple 整合的 24 項自動測試通過；實機已驗證 Evil WPA Twin 廣播、WIDS TSF collision 告警與測試後還原。
 
 下一步從專案根目錄執行 `python3 scripts/pineapple.py check`，在本機終端依提示輸入管理密碼。
 
@@ -39,7 +39,7 @@ Pineapple 插入 VM 後呈現的是 Ethernet 管理介面，不會直接成為�
 3. VM 內執行 `ip -br link`、`ip -br addr`，找出新增的 USB Ethernet（可能是 `enx...`，不要把原本 NAT 網卡當成 Pineapple）。
 4. 在 NetworkManager 把該介面的 IPv4 設為 `172.16.42.42/24`，不填 gateway。保留 VM 原本的 NAT／Internet 連線。[官方 Linux 設定](https://documentation.hak5.org/wifi-pineapple/setup/connecting-to-the-wifi-pineapple-on-linux)
 5. 在 VM 瀏覽器開啟 `http://172.16.42.1:1471`，完成初次設定並設定 root 密碼。[官方管理頁說明](https://documentation.hak5.org/wifi-pineapple/ui-overview/introduction)
-6. 記錄韌體版本。在 Pineapple 管理頁停止 PineAP、關閉自動啟動；備份需要的 SSID pool 後自行清空。控制器不會清除既有的無關 SSID。
+6. 記錄韌體版本。控制器會在每次測試前備份 PineAP／Open AP／Evil WPA 與 SSID pool 設定，並在測試後還原；執行期間不要同時在管理頁修改這些設定。
 
 若位址無法連線，先確認 USB passthrough、VM IPv4 與路由，而不是改 Wi-Fi 攻擊設定。若裝置管理位址已改過，同步更改下列 `base_url`。
 
@@ -111,7 +111,7 @@ tboxvenv/bin/python backend/app.py
 1. 先讓合法測試 AP 固定頻道，確認測試 STA 已連上它；此時 Pineapple 不廣播測試 SSID。
 2. 首頁掃描並選擇合法 AP，確保 BSSID／SSID／channel 與 JSON 相同。
 3. 右側 WIDS 選擇 `wlan0` 與相同頻道。流程執行到第 8 項時會自動啟動並保持監聽到第 28 項結束；也可手動按「啟動」。選定的合法 AP 會作為信任基準。
-4. 等待 WIDS 顯示監聽中，確認 frames 增加；不是只看到 REST 連線成功就算完成。
+4. 等待 WIDS 顯示監聽中，確認 frames 增加；不是只看到 REST 連線成功就算完成。測試會先備份裝置的 AP 與 SSID pool 設定，結束後完整還原。
 5. 將 JSON 的 `enabled` 改為 `true`。首頁「第 28 項攻擊裝置」選 WiFi Pineapple VII，第一次可只勾第 28 項，按「開始檢測」。會依序執行 deauth、同名 SSID 廣播。前一段失敗或停止時，不繼續後一段。
 6. 保持右側 WIDS 手動啟動狀態，觀察 `deauth_flood`、`evil_twin` 等事件。第 5／8／9 項的流程觀測窗本來在第 28 項之前；那些先前結果不會回溯更新成攻擊後的結果，**本次攻擊證據請看右側即時事件及日誌**。
 7. 完成後確認 PineAP 已還原，再停止 WIDS。紀錄 AP／STA、頻道、時間、Pineapple 工作結果、WIDS 告警與受測端是否斷線。
@@ -146,5 +146,6 @@ python3 scripts/pineapple.py check --config configs/pineapple.local.json
 
 - [登入與 Bearer token](https://hak5.github.io/mk7-docs/docs/rest/authentication/authentication/)
 - [PineAP settings、SSID pool 與定向 deauth](https://hak5.github.io/mk7-docs/docs/rest/pineap/pineap/)
+- [Open AP 與 Evil WPA Twin AP](https://hak5.github.io/mk7-docs/docs/rest/settings/settings/)
 
 尚待填寫／確認：VM USB 介面名稱、Pineapple 韌體版本與管理密碼、合法 AP BSSID／SSID／頻道、測試 STA MAC、WIDS 網卡 monitor-mode 能力，以及實機 RF 告警結果。
