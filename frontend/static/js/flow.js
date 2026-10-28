@@ -51,9 +51,10 @@ const STAGES = [
     id: "config", mode: "ap", sub: "a",
     title: "安全組態檢測", en: "Security Configuration Audit",
     items: [
-      { key: "wps", testId: 1, label: "禁用不安全連線（WPS）杜絕暴力破解" },
-      { key: "auth", testId: 2, label: "導入高安全性驗證（WPA3 / 802.1X）" },
-      { key: "ssid", testId: 4, label: "隱藏或管控 SSID 廣播" },
+      { key: "wps", testId: 1, label: "禁用 WPS" },
+      { key: "auth", testId: 2, label: "使用 WPA3 / 802.1X" },
+      { key: "ssid", testId: 4, label: "管控 SSID 廣播 / 限制接入" },
+      { key: "enterprise", testId: 5, label: "防 Rogue AP / 釣魚熱點" },
     ],
     run: runConfigAudit,
   },
@@ -70,8 +71,7 @@ const STAGES = [
     title: "主動防禦與異常偵測", en: "Active Defense · WIDS",
     items: [
       { key: "monitor", testId: 8, selectionOnly: true, label: "無線入侵偵測 WIDS/WIPS" },
-      { key: "handshake", testId: 9, label: "辨識大量重傳 / 非法握手（DoS·破解嘗試）" },
-      { key: "rogue", testId: 5, label: "偵測惡意熱點 / 釣魚熱點，防止誤連" },
+      { key: "deauth_detect", testId: 9, label: "偵測大量重傳 / 非法握手" },
     ],
     run: runWids,
   },
@@ -79,9 +79,7 @@ const STAGES = [
     id: "attacksim", mode: "client", sub: "b",
     title: "攻擊模擬與驗證", en: "Attack Simulation & Validation",
     items: [
-      { key: "deauth", testId: 28, label: "模擬 Deauth 解除認證攻擊" },
-      { key: "rogue_ap", testId: 28, label: "架設釣魚熱點（Rogue AP / Evil Twin）" },
-      { key: "log", testId: 28, label: "完整事件日誌（Log）儲存與紀錄" },
+      { key: "attack28", testId: 28, label: "模擬 deauth 與 rogue AP 測試" },
     ],
     run: runAttackSim,
   },
@@ -89,6 +87,7 @@ const STAGES = [
 
 // shared state passed between stages
 const ctx = { iface: "", bssid: "", channel: 6, networks: [], report: null };
+let widsSession = null;
 let running = false;
 
 // A missing selector keeps the original /flow behavior.
@@ -122,7 +121,7 @@ function cardHTML(st) {
       <ul class="items">${selectedItems(st).map(i => `
         <li data-check-key="${i.key}" data-status="pending">
           <div class="item-main">
-            <span class="item-text">${$("#test-selection") ? `${i.testId} · ` : ""}${i.label}<span class="item-detail"></span></span>
+            <span class="item-text">${$("#test-selection") ? `${i.testId} · ` : ""}${i.label}</span>
             <span class="mini-chip info">待測</span>
           </div>
         </li>`).join("")}</ul>
@@ -185,7 +184,7 @@ function setState(id, state, badgeText) {
 }
 function setResult(id, text) { $(`#card-${id} .result`).textContent = text || ""; }
 
-function setCheckState(stageId, key, status, detail = "") {
+function setCheckState(stageId, key, status) {
   const item = $(`#card-${stageId} [data-check-key="${key}"]`);
   if (!item) return;
   const normalized = String(status || "info").toLowerCase();
@@ -196,7 +195,6 @@ function setCheckState(stageId, key, status, detail = "") {
   item.dataset.status = normalized;
   $(".mini-chip", item).className = `mini-chip ${chipClass}`;
   $(".mini-chip", item).textContent = uiText(status || "INFO");
-  $(".item-detail", item).textContent = detail || "";
 }
 
 function resetCheckStates(id, status = "pending", label = "待測") {
@@ -204,7 +202,6 @@ function resetCheckStates(id, status = "pending", label = "待測") {
     item.dataset.status = status;
     $(".mini-chip", item).className = "mini-chip info";
     $(".mini-chip", item).textContent = label;
-    $(".item-detail", item).textContent = "";
   });
 }
 
@@ -272,6 +269,7 @@ const CHECK_KEYS = {
   "Strong auth (WPA3 / 802.1X)": "auth",
   "SSID broadcast policy": "ssid",
   "PMF (802.11w)": "pmf",
+  "Enterprise auth (802.1X + WPA2/3-Enterprise)": "enterprise",
 };
 
 function detRow(c) {
@@ -287,7 +285,7 @@ function summarizeChecks(report, names, label, stageId) {
   const checks = (report.checks || []).filter(c => names.includes(c.name) && keys.includes(CHECK_KEYS[c.name]));
   checks.forEach(c => {
     log(`  [${c.status}] ${c.name} — ${c.detail}`, lvlFor(c.status));
-    if (stageId) setCheckState(stageId, CHECK_KEYS[c.name], statusForItem(c.status), c.detail);
+    if (stageId) setCheckState(stageId, CHECK_KEYS[c.name], statusForItem(c.status));
   });
 
   const fails = checks.filter(c => c.status === "FAIL");
@@ -356,6 +354,7 @@ function runScenarioJob(scenario, extra) {
         // Pineapple (eth1, REST). Everything else uses the recon/WIDS radio (wlan0).
         if (scenario === "rogue_ap") {
           params.engine = "pineapple";
+          params.management_interface = $("#pineapple-iface")?.value || "";
         } else if (scenario === "deauth") {
           params.engine = "local";
           params.interface = $("#attack-iface")?.value || ctx.iface;
@@ -428,7 +427,8 @@ async function runConfigAudit() {
   ctx.report = a.report;   // cached for the advanced-protection stage
   return summarizeChecks(
     a.report,
-    ["WPS disabled", "Strong auth (WPA3 / 802.1X)", "SSID broadcast policy"],
+    ["WPS disabled", "Strong auth (WPA3 / 802.1X)", "SSID broadcast policy",
+      "Enterprise auth (802.1X + WPA2/3-Enterprise)"],
     "安全組態",
     "config");
 }
@@ -479,139 +479,124 @@ function widsEvidence(e) {
   return "";
 }
 
-function runWids() {
-  return new Promise(async (resolve) => {
-    const WINDOW_MS = 8000;
-    log(`Client 模式｜啟動 WIDS 監聽 ${ctx.iface}（${WINDOW_MS / 1000}s）…`, "info");
+async function stopOwnedWids() {
+  if (!widsSession) return [];
+  socket.off("wids_event", widsSession.onEvent);
+  if (widsSession.owned) await postJSON("/api/wids/stop", {});
+  const events = widsSession.events;
+  widsSession = null;
+  return events;
+}
 
-    // Feed the scan stage's discovered APs as the trusted baseline (BSSID whitelist).
-    const baseline = (ctx.networks || []).map(n => ({
-      bssid: n.bssid, ssid: n.ssid, channel: n.channel,
-    }));
-    if (baseline.length) log(`  白名單基準：${baseline.length} 個受信任 AP。`, "info");
+async function runWids() {
+  const iface = $("#wids-iface")?.value || ctx.iface;
+  const baseline = (ctx.networks || [])
+    .filter(n => n.bssid.toLowerCase() === ctx.bssid.toLowerCase())
+    .map(({bssid, ssid, channel}) => ({bssid, ssid, channel}));
+  log(`Client 模式｜啟動 WIDS 監聽 ${iface}，並保持到第 28 項完成…`, "info");
 
-    let alreadyRunning = false;
-    if ($("#wids-iface")) {
-      try {
-        const response = await fetch("/api/wids/status");
-        const current = await response.json();
-        alreadyRunning = current.status?.state === "running";
-      } catch (_) { /* Start request will report connection errors. */ }
-    }
-    const d = alreadyRunning ? { ok: true } : await postJSON("/api/wids/start", {
-      interface: $("#wids-iface")?.value || ctx.iface, channel: $("#wids-channel")?.value || ctx.channel, baseline,
-      scope: $("#wids-scope")?.value || "all", target_bssid: ctx.bssid,
-    });
-    if (!d.ok)
-      return resolve({
-        ok: false,
-        summary: "WIDS 啟動失敗",
-        errBody: `<pre>${escapeHtml(d.error || "無法啟動真實監聽模組。")}</pre>`,
-      });
-
-    let events = 0, high = 0;
-    const cat = { fingerprint: 0, mac_layer: 0, behavioral: 0, dos: 0 };
-    const findings = [];   // notable (non-baseline) events for the err-panel
-    const onEvt = (e) => {
-      if (!testSelected(8) && !(testSelected(9) && e.category === "dos") &&
-          !(testSelected(5) && ["fingerprint", "mac_layer", "behavioral"].includes(e.category))) return;
-      events++;
-      if (e.category in cat) cat[e.category]++;
-      if (e.severity === "high") high++;
-      const lvl = e.severity === "high" ? "fail" : e.severity === "medium" ? "warn" : "info";
-      const ev = widsEvidence(e);
-      log(`  [${(WIDS_CATS[e.category] || {}).label || e.category}] ${e.type} — ${e.message}`
-        + (ev ? `｜${ev}` : ""), lvl);
-      if (e.category !== "baseline" && e.severity !== "info") {
-        const chip = e.severity === "high" ? "fail" : "warn";
-        findings.push({ type: e.type, html: `<div class="det">
-          <span class="dn"><b>[${(WIDS_CATS[e.category] || {}).label || e.category}]</b> ${escapeHtml(e.message)}${ev ? ` — <i>${escapeHtml(ev)}</i>` : ""}</span>
-          <span class="chip ${chip}">${escapeHtml(e.type)}</span></div>` });
-      }
+  let alreadyRunning = false;
+  let currentStatus = null;
+  try {
+    const current = await (await fetch("/api/wids/status")).json();
+    currentStatus = current.status;
+    alreadyRunning = currentStatus?.state === "running";
+  } catch (_) { /* Start request below reports the useful error. */ }
+  if (alreadyRunning && (currentStatus.iface !== iface
+      || Number(currentStatus.channel) !== Number($("#wids-channel")?.value || ctx.channel)
+      || (currentStatus.scope === "target" && currentStatus.target_bssid !== ctx.bssid.toUpperCase()))) {
+    return {
+      ok: false, summary: "WIDS 設定不符",
+      errBody: "<pre>現有 WIDS 工作使用不同介面、頻道或目標；請先停止後再執行流程。</pre>",
     };
-    socket.on("wids_event", onEvt);
-
-    setTimeout(async () => {
-      socket.off("wids_event", onEvt);
-      if (!alreadyRunning) await postJSON("/api/wids/stop", {});
-      const brk = Object.entries(cat)
-        .filter(([key]) => testSelected(8) || (key === "dos" ? testSelected(9) : testSelected(5)))
-        .map(([key, count]) => `${WIDS_CATS[key].label} ${count}`).join(" · ");
-      setCheckState("wids", "monitor", "manual", "WIDS 監聽完成；WIPS 主動阻擋功能需人工驗證。");
-      log(`WIDS 觀測完成。共 ${events} 事件（${brk}），高危 ${high}。`, high ? "warn" : "ok");
-      const rogue = cat.fingerprint + cat.mac_layer + cat.behavioral;
-      setCheckState("wids", "handshake", cat.dos ? "warn" : "pass",
-        cat.dos ? `偵測到 ${cat.dos} 項 DoS / 握手完整性事件。` : "未偵測到重傳或非法握手異常。");
-      setCheckState("wids", "rogue", rogue ? "fail" : "pass",
-        rogue ? `偵測到 ${rogue} 項惡意 / 釣魚熱點事件。` : "未偵測到惡意或釣魚熱點事件。");
-
-      // One row per detection type (scenario loops), preserving first-seen order.
-      const seen = new Set();
-      const rows = findings.filter(r => (seen.has(r.type) ? false : seen.add(r.type)))
-        .map(r => r.html).join("");
-      if (findings.length) {
-        resolve({
-          ok: true, warn: true,
-          summary: `${events} 事件 · ${brk}`,
-          errTitle: high
-            ? `偵測到 ${high} 項高危入侵事件（Evil Twin 兩分支）`
-            : "偵測到需注意的 WIDS 事件",
-          errBody: rows || `<pre>詳見下方日誌。</pre>`,
-        });
-      } else {
-        const cleanRows = [
-          { testId: 9, name: "重傳 / 非法握手", status: "PASS", detail: "未偵測到異常。" },
-          { testId: 5, name: "惡意熱點 / 釣魚熱點", status: "PASS", detail: "未偵測到異常。" },
-          ...($("#test-selection") && testSelected(8) ? [{ testId: 8, name: "WIDS/WIPS", status: "MANUAL", detail: "WIDS 監聽完成；WIPS 主動阻擋需人工驗證。" }] : []),
-        ].filter(check => testSelected(check.testId)).map(detRow).join("");
-        resolve({
-          ok: true,
-          warn: !!$("#test-selection") && testSelected(8),
-          summary: `${events} 事件 · ${brk}`,
-          errTitle: "主動防禦：檢測明細",
-          errBody: cleanRows,
-        });
-      }
-    }, WINDOW_MS);
+  }
+  const result = alreadyRunning ? {ok: true} : await postJSON("/api/wids/start", {
+    interface: iface,
+    channel: $("#wids-channel")?.value || ctx.channel,
+    baseline,
+    scope: "target",
+    target_bssid: ctx.bssid,
   });
+  if (!result.ok) return {
+    ok: false, summary: "WIDS 啟動失敗",
+    errBody: `<pre>${escapeHtml(result.error || "無法啟動真實監聽模組。")}</pre>`,
+  };
+
+  const events = [];
+  const onEvent = event => {
+    events.push(event);
+    const evidence = widsEvidence(event);
+    log(`  [${(WIDS_CATS[event.category] || {}).label || event.category}] ${event.type} — ${event.message}`
+      + (evidence ? `｜${evidence}` : ""), event.severity === "high" ? "fail" : "info");
+  };
+  socket.on("wids_event", onEvent);
+  widsSession = {owned: !alreadyRunning, events, onEvent};
+  setCheckState("wids", "monitor", "pass");
+  $("#wids-panel")?.scrollIntoView({behavior: "smooth", block: "nearest"});
+
+  if (testSelected(28)) {
+    return {ok: true, summary: `WIDS 正在 ${iface} 監聽，將涵蓋第 28 項攻擊驗證。`};
+  }
+  await new Promise(resolve => setTimeout(resolve, 8000));
+  const observed = await stopOwnedWids();
+  const floods = observed.filter(event => event.type === "deauth_flood");
+  setCheckState("wids", "deauth_detect", floods.length ? "pass" : "manual");
+  return {ok: true, warn: !floods.length, summary: `${observed.length} 個 WIDS 事件`};
 }
 
 // Client/Station 模式 · b. 攻擊模擬與驗證 — Deauth + Rogue AP + 完整日誌
 async function runAttackSim() {
   log("Client 模式｜攻擊模擬與驗證 …", "info");
 
+  if (!widsSession) {
+    const monitor = await runWids();
+    if (!monitor.ok) {
+      setCheckState("attacksim", "attack28", "fail");
+      return monitor;
+    }
+  }
+
   log("① 模擬 Deauth 解除認證攻擊 …", "info");
   const d1 = await runScenarioJob("deauth", { count: "50" });
-  setCheckState("attacksim", "deauth", d1.ok ? "pass" : "fail",
-    d1.ok ? `腳本完成，輸出 ${d1.lines} 行。` : `腳本狀態：${d1.status}`);
 
   if (!d1.ok || attackStopRequested) {
+    await stopOwnedWids();
+    setCheckState("attacksim", "attack28", "fail");
     return { ok: false, summary: "Deauth 測試未完成，已停止後續攻擊測試。" };
   }
 
   log("② 架設釣魚熱點（Rogue AP / Evil Twin）— WiFi Pineapple over eth1 …", "info");
   const d2 = await runScenarioJob("rogue_ap");
-  setCheckState("attacksim", "rogue_ap", d2.ok ? "pass" : "fail",
-    d2.ok ? `腳本完成，輸出 ${d2.lines} 行。` : `腳本狀態：${d2.status}`);
 
   if (attackStopRequested || d2.status === "killed") {
+    await stopOwnedWids();
+    setCheckState("attacksim", "attack28", "fail");
     return { ok: false, summary: "攻擊測試已停止，請確認裝置還原狀態。" };
   }
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  const widsEvents = await stopOwnedWids();
+  const deauthDetected = widsEvents.some(event => event.type === "deauth_flood");
+  const twinTypes = new Set(["fingerprint_mismatch", "seq_anomaly", "tsf_collision", "rssi_spike"]);
+  const twinDetected = widsEvents.some(event => twinTypes.has(event.type));
+  const widsDetected = deauthDetected && twinDetected;
+  setCheckState("wids", "deauth_detect", deauthDetected ? "pass" : "fail");
+  setCheckState("attacksim", "attack28", widsDetected && d1.ok && d2.ok ? "pass" : "fail");
   const totalLines = d1.lines + d2.lines;
   log("③ 所有異常連線事件已寫入稽核日誌（logs/testing.jsonl）。", "ok");
-  setCheckState("attacksim", "log", "pass", "事件已寫入 logs/testing.jsonl。");
 
   const rows = [
     { name: "Deauth 攻擊模擬", status: d1.ok ? "PASS" : "FAIL",
       detail: d1.ok ? `完成，輸出 ${d1.lines} 行。` : `未完成，狀態 ${d1.status}。` },
     { name: "Rogue AP / Evil Twin", status: d2.ok ? "PASS" : "FAIL",
       detail: d2.ok ? `完成，輸出 ${d2.lines} 行。` : `未完成，狀態 ${d2.status}。` },
+    { name: "WIDS 攻擊驗證", status: widsDetected ? "PASS" : "FAIL",
+      detail: `Deauth flood ${deauthDetected ? "已偵測" : "未偵測"}；同 MAC Evil Twin ${twinDetected ? "已偵測" : "未偵測"}。` },
     { name: "事件日誌", status: "PASS", detail: "已記錄至 logs/testing.jsonl。" },
   ].map(detRow).join("");
 
-  if (!d1.ok && !d2.ok) {
+  if (!d1.ok || !d2.ok || !widsDetected) {
     return {
-      ok: false, summary: "攻擊腳本失敗",
+      ok: false, summary: "第 28 項未完成 WIDS 閉環驗證",
       errBody: rows,
     };
   }
@@ -716,6 +701,7 @@ async function runPipeline() {
   }
 
   if (failed) {
+    await stopOwnedWids();
     setProgress(100, "failed");
     setDockStat("中止", "failed");
     log("════ 檢測流程中止 ════", "fail");
@@ -797,6 +783,7 @@ async function loadInterfaces() {
   await Promise.all([
     populateInterfaceSelect($("#cfg-iface"), "/api/interfaces", initialParams.get("iface")),
     populateInterfaceSelect($("#attack-iface"), "/api/attack/interfaces", null),
+    populateInterfaceSelect($("#pineapple-iface"), "/api/pineapple/interfaces", null),
   ]);
 }
 
@@ -823,6 +810,7 @@ $("#test-selection")?.addEventListener("change", () => {
   resetUI(false);
   const count = selectedTestIds().size;
   $("#selection-status").textContent = count ? `已選擇 ${count} 項檢測` : "請至少勾選一個檢測項目。";
+  if (testSelected(8)) $("#wids-panel")?.scrollIntoView({behavior: "smooth", block: "nearest"});
 });
 
 $("#scenario-stop")?.addEventListener("click", async () => {

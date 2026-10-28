@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -76,9 +77,28 @@ def validate(config, scenario, bssid=None, channel=None):
         if not isinstance(ssid, str) or not 1 <= len(ssid.encode()) <= 32 or any(c in ssid for c in '\r\n\x00'):
             raise PineappleError("請填寫 1–32 bytes 的單一測試 SSID。")
         evil = config.get("evil_twin", {})
-        if mac(evil.get("bssid")) == target_mac:
-            raise PineappleError("同名 SSID 偵測測試需使用不同的 Evil Twin BSSID。")
+        configured_clone = evil.get("bssid")
+        if configured_clone and mac(configured_clone) != target_mac:
+            raise PineappleError("evil_twin.bssid 必須留空或與 target.bssid 相同，才能測試同 MAC 複製偵測。")
         bounded(evil.get("duration_seconds"), 1, 30, "duration_seconds")
+
+
+def verify_management_route(base_url, interface):
+    """Refuse to send credentials unless the Pineapple address routes via the selected link."""
+    if not interface:
+        raise PineappleError("請選擇 Pineapple 管理介面（例如 eth1）。")
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]+", interface) or not (Path("/sys/class/net") / interface).exists():
+        raise PineappleError(f"找不到 Pineapple 管理介面：{interface}")
+    host = urlparse(base_url).hostname
+    if not host:
+        raise PineappleError("base_url 缺少有效的 Pineapple 主機位址。")
+    try:
+        result = subprocess.run(["ip", "route", "get", host], capture_output=True,
+                                text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PineappleError("無法檢查 Pineapple 管理路由；需要 iproute2。") from exc
+    if result.returncode != 0 or re.search(rf"\bdev\s+{re.escape(interface)}\b", result.stdout) is None:
+        raise PineappleError(f"{host} 未經所選介面 {interface} 路由；未傳送登入資料。")
 
 
 class Client:
@@ -219,14 +239,15 @@ def run_evil_twin(client, config, snapshot_path, sleep=time.sleep):
         settings["_mode"] = "advanced"
     settings.update(enablePineAP=True, AutoStart=False, ap_channel=str(target["channel"]),
                     broadcast_ssid_pool=True, capture_ssids=False, beacon_responses=False,
-                    karma=False, logging=True, pineap_mac=evil["bssid"], target_mac="ff:ff:ff:ff:ff:ff")
+                    karma=False, logging=True, pineap_mac=target["bssid"], target_mac="ff:ff:ff:ff:ff:ff")
     try:
         client.mutate("PUT", SSID, {"ssid": target["ssid"]})
         client.mutate("PUT", SETTINGS, settings)
         current = client.settings()
         if any(current[key] != value for key, value in settings.items()):
             raise PineappleError("裝置未套用預期 PineAP 設定；開始還原。")
-        print(f"[evil-twin] 同名 SSID 廣播中，{evil['duration_seconds']} 秒後還原；不啟用自動接入。", flush=True)
+        print(f"[evil-twin] 正以相同 SSID/BSSID/頻道廣播，{evil['duration_seconds']} 秒後還原；"
+              "不啟用自動接入或憑證蒐集。", flush=True)
         sleep(evil["duration_seconds"])
     finally:
         try:
@@ -242,6 +263,7 @@ def main(argv=None):
     parser.add_argument("--execute", action="store_true", help="實際執行測試；仍需 enabled=true")
     parser.add_argument("--bssid", help="驗證 UI 目標與設定一致")
     parser.add_argument("--channel", type=int, help="驗證 UI 頻道與設定一致")
+    parser.add_argument("--management-interface", help="Pineapple USB 管理介面（例如 eth1）")
     args = parser.parse_args(argv)
     config = json.loads(args.config.read_text())
     if not isinstance(config, dict):
@@ -257,6 +279,8 @@ def main(argv=None):
         if config.get("enabled") is not True:
             raise PineappleError("裝置尚未啟用：完成設定後將 enabled 改為 true。")
         validate(config, args.action, args.bssid, args.channel)
+    management_interface = args.management_interface or config.get("management_interface")
+    verify_management_route(config.get("base_url", ""), management_interface)
     client = Client(config)
     # One local job per config; retain recovery state if a prior process was killed.
     with args.config.resolve().with_suffix(".lock").open("a") as lock:

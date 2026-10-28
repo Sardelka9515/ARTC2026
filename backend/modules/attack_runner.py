@@ -14,6 +14,7 @@ import threading
 import subprocess
 import time
 import sys
+import re
 from pathlib import Path
 
 
@@ -38,9 +39,9 @@ SCENARIOS = {
     },
     # 802.11 deauth attack to test PMF/802.11w effectiveness.
     "deauth": {
-        "cmd": "aireplay-ng --deauth {count} -a {bssid} {interface}",
+        "cmd": "python3 scripts/deauth_test.py --interface {interface} --bssid {bssid} --channel {channel} --count {count}",
         "desc": "Deauth flood — verifies PMF (802.11w) protection",
-        "requires": ["bssid", "interface"],
+        "requires": ["bssid", "channel", "interface"],
         "defaults": {"count": "50"},
     },
     # WPS PIN brute-force (Reaver) — checks if WPS is properly disabled.
@@ -118,12 +119,21 @@ class AttackRunner:
             config = Path(os.environ.get("PINEAPPLE_CONFIG", root / "configs/pineapple.local.json"))
             if not config.is_file():
                 raise ValueError("尚未設定 Pineapple：請先建立 configs/pineapple.local.json")
+            management_interface = str(params.get("management_interface", "")).strip()
+            if management_interface:
+                if not re.fullmatch(r"[A-Za-z0-9_.:-]+", management_interface):
+                    raise ValueError("invalid Pineapple management interface")
+                if not (Path("/sys/class/net") / management_interface).exists():
+                    raise ValueError(f"Pineapple management interface not found: {management_interface}")
             # Never accept a config path or command from the browser.
-            cmd = shlex.join([sys.executable, "-u", str(root / "scripts/pineapple.py"),
-                              "deauth" if scenario == "deauth" else "evil-twin",
-                              "--config", str(config.resolve()), "--execute",
-                              "--bssid", str(params.get("bssid", "")),
-                              "--channel", str(params.get("channel", ""))])
+            argv = [sys.executable, "-u", str(root / "scripts/pineapple.py"),
+                    "deauth" if scenario == "deauth" else "evil-twin",
+                    "--config", str(config.resolve()), "--execute",
+                    "--bssid", str(params.get("bssid", "")),
+                    "--channel", str(params.get("channel", ""))]
+            if management_interface:
+                argv.extend(["--management-interface", management_interface])
+            cmd = shlex.join(argv)
         else:
             cmd = self._local_command(scenario, params)
         job = AttackJob(job_id, scenario, cmd)
@@ -140,6 +150,21 @@ class AttackRunner:
         missing = [k for k in spec["requires"] if not merged.get(k)]
         if missing:
             raise ValueError(f"missing required params: {missing}")
+
+        if scenario == "deauth":
+            iface = str(merged["interface"])
+            if (not re.fullmatch(r"[A-Za-z0-9_.:-]+", iface)
+                    or not (Path("/sys/class/net") / iface).exists()):
+                raise ValueError("invalid or missing deauth interface")
+            if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", str(merged["bssid"])):
+                raise ValueError("invalid BSSID")
+            try:
+                channel, count = int(merged["channel"]), int(merged["count"])
+            except (TypeError, ValueError):
+                raise ValueError("channel and count must be integers") from None
+            if not 1 <= channel <= 233 or not 1 <= count <= 200:
+                raise ValueError("channel or count outside the lab safety limit")
+            merged.update(channel=channel, count=count)
 
         return spec["cmd"].format(**merged)
 
@@ -187,6 +212,7 @@ class AttackRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True, bufsize=1,
+                cwd=Path(__file__).resolve().parents[2],
             )
             if job.stop_requested:
                 job.proc.terminate()

@@ -6,6 +6,7 @@ Project: 車聯網資安測試技術研究 (ARTC / NCU CSIE)
 UN R155 / ISO-SAE 21434 oriented Wi-Fi security test UI skeleton.
 """
 import os
+import re
 import uuid
 import threading
 from flask import Flask, render_template, request, jsonify
@@ -97,6 +98,20 @@ def api_attack_interfaces():
     """List wireless interfaces for the deauth step, preferring the TP-Link (wlan1)."""
     from modules.scan import list_interfaces
     return jsonify(interface_choices(list_interfaces(), "deauth"))
+
+
+@app.route("/api/pineapple/interfaces", methods=["GET"])
+def api_pineapple_interfaces():
+    """List host network links that can carry Pineapple management traffic."""
+    net_dir = "/sys/class/net"
+    try:
+        interfaces = sorted(name for name in os.listdir(net_dir)
+                            if name != "lo" and re.fullmatch(r"[A-Za-z0-9_.:-]+", name))
+    except OSError:
+        interfaces = []
+    preferred = "eth1" if "eth1" in interfaces else (interfaces[0] if interfaces else None)
+    return jsonify({"interfaces": interfaces, "labels": {name: name for name in interfaces},
+                    "preferred": preferred})
 
 
 @app.route("/api/scan", methods=["POST"])

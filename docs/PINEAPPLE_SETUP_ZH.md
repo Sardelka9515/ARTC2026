@@ -25,7 +25,7 @@ VM ── USB Ethernet ── Pineapple VII（測試訊框發送）
 ```
 
 - `deauth`：對設定的合法 AP 與單一測試 STA 送出有限次數的解除認證請求，供 DoS／PMF 檢測使用。不是 RF 干擾器，也不保證 PMF 受保護的連線會中斷。
-- `evil-twin`：使用相同 SSID、不同 BSSID，定時廣播供 Rogue AP 偵測。這是同名熱點的**偵測測試**，不包含完整 WPA2/WPA3 接入複製、釣魚登入頁、帳密蒐集或 MAC 複製攻擊。廣播測試不要求 T-BOX 實際連入。
+- `evil-twin`：使用相同 SSID、BSSID 與頻道定時廣播，供 WIDS 的 MAC spoof／TSF／Beacon 指紋偵測。這是封閉實驗室內的**偵測測試**，不啟用自動接入、釣魚登入頁、握手擷取或帳密蒐集；廣播測試不要求 T-BOX 實際連入。
 - 第 9 項的非法握手與重傳偵測是另一組偵測器；deauth 不必然產生這兩種事件。
 - 此設定範本限定 2.4 GHz 頻道；先使用測試 AP 的合法固定頻道（例如 6）。
 - 用於本專案的 ARTC 實驗設備／已授權測試網路。設定中的 AP、SSID 與 STA 應為同一組測試對象。
@@ -58,13 +58,14 @@ chmod 600 configs/pineapple.local.json
 |---|---|
 | `enabled` | 全部確認後才設為 `true`；預設 `false` |
 | `base_url` | Pineapple 管理頁位址，預設 `http://172.16.42.1:1471` |
+| `management_interface` | VM 的 Pineapple USB Ethernet 名稱，預設 `eth1`；也可在首頁選擇 |
 | `username` | 預設 `root` |
 | `password_env` | 保存密碼的環境變數名稱，預設 `PINEAPPLE_PASSWORD`；不是密碼本身 |
 | `target.bssid` | 合法測試 AP 的 BSSID，須與首頁選擇相同 |
 | `target.ssid` | 合法 AP 的完整 SSID，大小寫與空白必須一致 |
 | `target.channel` | 合法 AP、Pineapple 測試與 WIDS 共同使用的頻道 |
 | `target.client_mac` | 已連上合法 AP 的測試 STA／T-BOX MAC，注意裝置的隨機 MAC 設定 |
-| `evil_twin.bssid` | 不同於合法 AP 的測試 BSSID；範本為 `02:00:00:00:28:01`，須確認無位址衝突 |
+| `evil_twin.bssid` | 留空，或填入與 `target.bssid` 相同的位址；腳本拒絕不同 MAC |
 | `evil_twin.duration_seconds` | 同名熱點廣播時間，預設 15 秒，最多 30 秒 |
 | `deauth.bursts` | API 請求次數，預設 5，最多 10 |
 | `deauth.interval_seconds` | 請求間隔，預設 1 秒 |
@@ -105,11 +106,11 @@ tboxvenv/bin/python backend/app.py
 
 ## 5. WIDS 與實際執行順序
 
-本次雙網卡分工為 MediaTek 掃描（目前 `wlan1`）、TP-Link WIDS（目前 `wlan0`）。首頁會依 USB 廠商 ID 預選對應介面，並在選單顯示品牌；介面名稱改變後仍依硬體辨識，可手動調整。未發現 AP 時顯示空結果，不產生示範 AP 或虛構介面。
+本次雙網卡分工為 MediaTek `wlan0` 先掃描、再切換為 WIDS，TP-Link `wlan1` 專供 deauth；Pineapple 管理鏈路預設 `eth1`。三個介面都可在首頁手動選擇。未發現 AP 時顯示空結果，不產生示範 AP 或虛構介面。
 
 1. 先讓合法測試 AP 固定頻道，確認測試 STA 已連上它；此時 Pineapple 不廣播測試 SSID。
 2. 首頁掃描並選擇合法 AP，確保 BSSID／SSID／channel 與 JSON 相同。
-3. 右側 WIDS 選擇 VM 的**獨立無線監聽介面**與相同頻道，手動按「啟動」。選定的合法 AP 會作為信任基準。沒有基準時，同名 SSID 的 Evil Twin 檢查不會生效。
+3. 右側 WIDS 選擇 `wlan0` 與相同頻道。流程執行到第 8 項時會自動啟動並保持監聽到第 28 項結束；也可手動按「啟動」。選定的合法 AP 會作為信任基準。
 4. 等待 WIDS 顯示監聽中，確認 frames 增加；不是只看到 REST 連線成功就算完成。
 5. 將 JSON 的 `enabled` 改為 `true`。首頁「第 28 項攻擊裝置」選 WiFi Pineapple VII，第一次可只勾第 28 項，按「開始檢測」。會依序執行 deauth、同名 SSID 廣播。前一段失敗或停止時，不繼續後一段。
 6. 保持右側 WIDS 手動啟動狀態，觀察 `deauth_flood`、`evil_twin` 等事件。第 5／8／9 項的流程觀測窗本來在第 28 項之前；那些先前結果不會回溯更新成攻擊後的結果，**本次攻擊證據請看右側即時事件及日誌**。

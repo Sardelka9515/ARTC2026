@@ -12,7 +12,7 @@ class AttackRunnerTests(unittest.TestCase):
         self.socket = Mock()
         self.runner = AttackRunner(self.socket, Mock())
         self.job = AttackJob("test-job", "deauth",
-                             "aireplay-ng --deauth 1 -a AA:BB:CC:DD:EE:FF wlan0")
+                             "python3 scripts/deauth_test.py --interface wlan0 --bssid AA:BB:CC:DD:EE:FF --channel 6 --count 1")
 
     @patch("modules.attack_runner.shutil.which", return_value="/usr/bin/aireplay-ng")
     @patch("modules.attack_runner.subprocess.Popen")
@@ -23,7 +23,8 @@ class AttackRunnerTests(unittest.TestCase):
         self.runner._run(self.job)
 
         self.assertEqual(popen.call_args.args[0], [
-            "aireplay-ng", "--deauth", "1", "-a", "AA:BB:CC:DD:EE:FF", "wlan0",
+            "python3", "scripts/deauth_test.py", "--interface", "wlan0", "--bssid",
+            "AA:BB:CC:DD:EE:FF", "--channel", "6", "--count", "1",
         ])
         popen.return_value.wait.assert_called_once()
         self.socket.emit.assert_any_call(
@@ -44,6 +45,19 @@ class AttackRunnerTests(unittest.TestCase):
         self.socket.emit.assert_any_call(
             "job_output", {"job_id": "test-job", "line": "[runner-error] denied"}, namespace="/")
         self.socket.emit.assert_any_call("job_update", self.job.to_dict(), namespace="/")
+
+    @patch.object(Path, "exists", return_value=True)
+    def test_deauth_command_is_finite_and_rejects_injected_values(self, _exists):
+        command = self.runner._local_command("deauth", {
+            "interface": "wlan1", "bssid": "aa:bb:cc:dd:ee:ff",
+            "channel": 6, "count": 50,
+        })
+        self.assertIn("scripts/deauth_test.py", command)
+        for bad in ({"interface": "wlan1 --help"}, {"count": 10000}, {"channel": 0}):
+            values = {"interface": "wlan1", "bssid": "aa:bb:cc:dd:ee:ff",
+                      "channel": 6, "count": 50, **bad}
+            with self.assertRaises(ValueError):
+                self.runner._local_command("deauth", values)
 
 
 if __name__ == "__main__":

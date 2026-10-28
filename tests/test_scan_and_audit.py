@@ -85,6 +85,16 @@ BSS aa:bb:cc:44:55:66(on wlan0)
         self.assertEqual(result[0]["pmf"], "capable")
         self.assertFalse(any(key.startswith("_") for key in result[0]))
 
+    def test_parses_wpa3_enterprise_only_with_modern_akm_and_required_pmf(self):
+        result = _parse_iw_scan("""
+BSS aa:bb:cc:44:55:77(on wlan0)
+        SSID: ARTC-Enterprise
+        RSN:
+            * Authentication suites: 802.1X/SHA-256
+            * Capabilities: MFP-required
+""")
+        self.assertEqual(result[0]["encryption"], "WPA3-Enterprise")
+
     def test_does_not_misclassify_legacy_wpa_psk_as_wpa2(self):
         result = _parse_iw_scan(
             """
@@ -121,6 +131,16 @@ class ConfigAuditTests(unittest.TestCase):
         self.assertEqual(statuses["Strong auth (WPA3 / 802.1X)"], "PASS")
         self.assertEqual(statuses["PMF (802.11w)"], "PASS")
         self.assertEqual(statuses["SSID broadcast policy"], "PASS")
+
+    @patch("modules.config_audit.scan_networks")
+    def test_item_5_requires_enterprise_8021x(self, scan_networks):
+        for encryption, expected in (("WPA3", "FAIL"), ("WPA2-Enterprise", "PASS"),
+                                     ("WPA3-Enterprise", "PASS")):
+            scan_networks.return_value = [{"bssid": "aa:bb:cc:11:22:33",
+                                           "encryption": encryption}]
+            report = audit_target("wlan0", "aa:bb:cc:11:22:33",
+                                  ["Enterprise auth (802.1X + WPA2/3-Enterprise)"])
+            self.assertEqual(report["checks"][0]["status"], expected)
 
 
 if __name__ == "__main__":

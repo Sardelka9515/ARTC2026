@@ -6,7 +6,7 @@ from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from modules.wids import FrameObservation, MacSpoofDetector, WIDSMonitor
+from modules.wids import DoSDetector, FrameObservation, MacSpoofDetector, WIDSMonitor
 
 
 class SocketStub:
@@ -176,6 +176,18 @@ class SequenceDetectorTests(unittest.TestCase):
     def test_retry_beacon_is_ignored(self):
         self.detector.feed(self.beacon(2000), {})
         self.assertEqual(self.detector.feed(self.beacon(1000, retry=True), {}), [])
+
+
+class DeauthDetectorTests(unittest.TestCase):
+    def test_twenty_deauth_frames_in_window_emit_one_flood_alert(self):
+        detector = DoSDetector()
+        events = []
+        with patch("modules.wids.time.time", return_value=100):
+            for _ in range(25):
+                events.extend(detector.feed(FrameObservation(
+                    bssid="AA:BB:CC:00:00:01", is_deauth=True, reason_code=7), {}))
+        self.assertEqual([event["type"] for event in events], ["deauth_flood"])
+        self.assertEqual(events[0]["evidence"]["count"], 20)
 
 
 if __name__ == "__main__":

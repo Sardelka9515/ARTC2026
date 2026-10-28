@@ -26,6 +26,7 @@ def _is_hidden_ssid(ssid):
 AUDIT_CHECKS = {
     "WPS disabled", "Strong auth (WPA3 / 802.1X)", "PMF (802.11w)",
     "SSID broadcast policy", "Client isolation",
+    "Enterprise auth (802.1X + WPA2/3-Enterprise)",
 }
 
 
@@ -59,7 +60,7 @@ def audit_target(iface, bssid, checks=None):
         enc = target.get("encryption", "OPEN")
         if enc == "WPA3":
             add("Strong auth (WPA3 / 802.1X)", "PASS", "WPA3-SAE in use.")
-        elif enc == "WPA2-Enterprise":
+        elif enc in ("WPA2-Enterprise", "WPA3-Enterprise"):
             add("Strong auth (WPA3 / 802.1X)", "PASS", "802.1X authentication in use.")
         elif enc == "WPA3-Transition":
             add("Strong auth (WPA3 / 802.1X)", "WARN",
@@ -70,6 +71,15 @@ def audit_target(iface, bssid, checks=None):
         else:
             add("Strong auth (WPA3 / 802.1X)", "WARN",
                 f"{enc} detected — upgrade to WPA3 or 802.1X recommended.")
+
+    if "Enterprise auth (802.1X + WPA2/3-Enterprise)" in selected:
+        enc = target.get("encryption", "OPEN")
+        if enc in ("WPA2-Enterprise", "WPA3-Enterprise"):
+            add("Enterprise auth (802.1X + WPA2/3-Enterprise)", "PASS",
+                f"{enc} with 802.1X authentication detected.")
+        else:
+            add("Enterprise auth (802.1X + WPA2/3-Enterprise)", "FAIL",
+                f"Detected {enc}; item 5 requires 802.1X with WPA2-Enterprise, WPA3-Enterprise, or stronger.")
 
     if "PMF (802.11w)" in selected:
         # 3. PMF / 802.11w

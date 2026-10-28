@@ -199,7 +199,11 @@ def _parse_iw_scan(text):
             elif "SAE" in auth or "OWE" in auth:
                 current["encryption"] = "WPA3"
             elif any(a.startswith("802.1X") for a in auth):
-                current["encryption"] = "WPA2-Enterprise"
+                modern = any(a in ("802.1X/SHA-256", "802.1X/SHA-384") for a in auth)
+                current["encryption"] = (
+                    "WPA3-Enterprise" if modern and current["pmf"] == "required"
+                    else "WPA2-Enterprise"
+                )
             elif "PSK" in auth:
                 current["encryption"] = "WPA2"
             else:

@@ -52,7 +52,7 @@ In-Vehicle Networks under UN Regulation No.\,155}
 
 本研究以 ARTC 車聯網測試場域為對象，建立一套以威脅建模為核心的車載 Wi-Fi 資安測試框架，並實作對應之 Web 化可視化測試平台。首先將 T-Box 的無線運作情境區分為「AP 模式」與「Client／Station 模式」兩類，分別界定其攻擊面：AP 模式聚焦於安全組態缺陷（WPS 啟用、弱加密、缺乏管理訊框保護、缺乏用戶端隔離）；Client／Station 模式則聚焦於偽造熱點誘騙、連線阻斷服務與異常握手封包注入，並進一步將 Deauthentication 與 Evil Twin 二項攻擊技術串接為具因果關係的「Deauth–Evil Twin 整合攻擊鏈」，用以檢驗 PMF（802.11w）、WPA3／802.1X 伺服器端驗證與用戶端組態三道防線的有效性。
 
-系統以 Flask 與 Socket.IO 建立前後端架構，後端整合無線掃描、安全組態稽核、授權攻擊情境執行、無線入侵偵測（WIDS）與 JSONL 稽核紀錄五大模組；當缺少實體測試工具或監聽模式硬體時，系統自動切換為模擬輸出，以支援開發、教學與展示，並於論文中明確區分模擬結果與實體測試結果。WIDS 模組並實作「Deauth 突發流量後隨即出現相同 SSID、不同 BSSID 新 AP」之高信度關聯規則，作為 Evil Twin 攻擊之核心判定依據。
+系統以 Flask 與 Socket.IO 建立前後端架構，後端整合無線掃描、安全組態稽核、授權攻擊情境執行、無線入侵偵測（WIDS）與 JSONL 稽核紀錄五大模組。WIDS 僅接受實體監聽結果；介面或 raw capture 無法啟動時即回報失敗，不以模擬事件取代證據。針對同 SSID、同 BSSID 之 Evil Twin，系統以 Beacon 指紋、Sequence Number、TSF 與 RSSI 差異交叉判定。
 
 目前成果以功能原型、威脅模型與流程驗證為主；實體 T-Box 測試、量化偵測準確率與效能數據仍待於 ARTC 授權實驗環境中補充。
 
@@ -63,7 +63,7 @@ The growing use of Wi-Fi as an external connectivity interface for the in-vehicl
 
 This study proposes a threat-modeling-driven Wi-Fi security testing framework for in-vehicle networks, targeting the ARTC connected-vehicle testbed, together with a Web-based visualized testing platform. The T-Box's wireless operating context is first divided into an \emph{AP mode} and a \emph{Client/Station mode}, each with a distinct attack surface: AP mode centers on configuration weaknesses (WPS enabled, weak encryption, missing PMF, missing client isolation), while Client/Station mode centers on rogue-AP deception, connection denial-of-service, and abnormal handshake injection. A \emph{Deauth--Evil Twin attack chain} is further constructed by chaining deauthentication and Evil Twin techniques into a causally linked scenario used to evaluate three defense layers: PMF (802.11w), WPA3/802.1X server-side certificate validation, and client-side configuration.
 
-The platform is built on Flask and Socket.IO, integrating wireless scanning, security configuration auditing, authorized attack-scenario execution, wireless intrusion detection (WIDS), and JSONL-based audit logging. A simulation fallback is provided when physical tools or monitor-mode hardware are unavailable, and simulated results are explicitly separated from physical-hardware results throughout the thesis. The WIDS module implements a high-confidence correlation rule --- a burst of deauthentication frames immediately followed by a new AP sharing the same SSID but a different BSSID --- as the primary criterion for Evil Twin detection.
+The platform is built on Flask and Socket.IO, integrating wireless scanning, security configuration auditing, authorized attack-scenario execution, wireless intrusion detection (WIDS), and JSONL-based audit logging. WIDS evidence is accepted only from real monitor-mode capture. Same-SSID, same-BSSID Evil Twins are identified by correlating Beacon fingerprints, sequence-number discontinuities, TSF collisions, and RSSI changes with a preceding deauthentication flood.
 
 Current results consist of a functional prototype, a threat model, and workflow validation; physical T-Box testing, quantitative detection accuracy, and performance data remain to be collected in an authorized ARTC test environment.
 
@@ -122,7 +122,7 @@ UN R155 要求車廠建立資安管理系統，涵蓋供應鏈風險管理、威
 現行 IT 弱點掃描工具（如通用漏洞掃描器）多以主機、服務或已知 CVE 為導向，缺乏對 802.11 管理訊框層級行為（PMF、握手序列、Rogue AP 關聯性）的專屬檢測邏輯，亦未考量車載場域「測試視窗短、目標裝置行動性高」之限制。業界對車載資安測試之討論多聚焦於流程與合規要求本身\cite{luo2022automotive,dennemeyer2025mobility}；即便學術界已提出將車載資安測試自動化之方法論\cite{marksteiner2019automation}，其討論多集中於車輛網路（如 CAN 匯流排）與整體測試流程之自動化框架設計，較少提供可直接落地執行、針對 Wi-Fi 攻擊面之開源自動化腳本與可視化平台。本研究之定位即在於填補「合規要求」與「可執行測試工具」之間的落差。
 
 \section{相關工具與技術基礎}
-系統實作採用 Flask 作為 REST API 框架、Socket.IO 提供即時雙向通訊；無線掃描與稽核倚賴 \texttt{iw}；攻擊情境執行整合 wifite2（自動化稽核）、aircrack-ng 套件之 \texttt{aireplay-ng}（deauth）、reaver（WPS 暴力破解）與 hostapd（Rogue AP／Evil Twin 架設）；WIDS 模組則以 Scapy 進行封包層級的管理訊框監聽與特徵擷取。各工具之角色分工詳見第四章實作說明。
+系統實作採用 Flask 作為 REST API 框架、Socket.IO 提供即時雙向通訊；無線掃描與稽核倚賴 \texttt{iw}；攻擊情境以 aircrack-ng 套件之 \texttt{aireplay-ng} 在獨立網卡執行有限次數 deauth，Rogue AP／Evil Twin 則透過 WiFi Pineapple Mark VII REST API 建立；WIDS 模組以 Scapy 進行封包層級的管理訊框監聽與特徵擷取。各工具之角色分工詳見第四章實作說明。
 
 \chapter{威脅建模與系統架構}
 
@@ -196,7 +196,7 @@ SSID 廣播不當 & 目標識別、隱藏 SSID 之偽安全假象 & 依風險評
 五個後端模組依功能可歸納為三類：
 \begin{enumerate}
   \item \textbf{合規檢測模組}：\texttt{scan.py} 與 \texttt{config\_audit.py}，負責被動掃描與 WPS／加密／PMF／SSID 廣播等組態稽核。
-  \item \textbf{攻擊模擬模組}：\texttt{attack\_runner.py}，以工作（job）為單位管理 wifite2、aireplay-ng、reaver、hostapd 等外部工具之啟動、即時輸出串流與停止。
+  \item \textbf{攻擊模擬模組}：\texttt{attack\_runner.py}，以工作（job）為單位管理有限次數 deauth 腳本與 WiFi Pineapple 控制器之啟動、即時輸出串流、停止與復原。
   \item \textbf{異常偵測模組}：\texttt{wids.py}，以 Scapy 監聽管理訊框，實作滑動時間窗計數與 Rogue AP 關聯規則；\texttt{logger.py} 則橫向支援前三者，將所有事件統一寫入 JSONL 稽核軌跡。
 \end{enumerate}
 此模組化設計使合規檢測、攻擊模擬與異常偵測三者可獨立開發、獨立測試，亦便於日後替換或新增底層工具（例如以 hcxdumptool 取代 aircrack-ng 套件之握手擷取功能）而不影響上層 API 與前端介面。
@@ -266,7 +266,7 @@ F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
 \texttt{handshake\_cap} & 僅擷取 4-way handshake，不進行破解 & \texttt{wifite ... --no-crack --no-wps} \\
 \texttt{deauth} & Deauth flood，驗證 PMF／802.11w 防護 & \texttt{aireplay-ng --deauth \{count\} -a \{bssid\} \{interface\}} \\
 \texttt{wps\_bruteforce} & Reaver WPS PIN 暴力破解 & \texttt{reaver -i \{interface\} -b \{bssid\} -c \{channel\}} \\
-\texttt{rogue\_ap} & 架設 Evil Twin（hostapd） & \texttt{hostapd \{config\_path\}} \\
+\texttt{rogue\_ap} & 架設同 SSID／BSSID Evil Twin & WiFi Pineapple REST controller \\
 \texttt{pmf\_probe} & 送出偽造管理訊框，觀測 PMF 拒絕行為 & \texttt{python3 scripts/pmf\_probe.py --iface \{interface\} --bssid \{bssid\}} \\
 \bottomrule
 \end{longtable}
@@ -274,11 +274,11 @@ F-07 & 保存測試事件與結果 & \texttt{logger.py} \\
 工作管理器（\texttt{AttackRunner}）以 \texttt{job\_id} 追蹤每個工作，狀態機為 \texttt{pending → running → finished／killed／error}；啟動時以獨立執行緒（\texttt{threading.Thread}）執行子行程，逐行讀取 \texttt{stdout} 並經 Socket.IO 以 \texttt{job\_output} 即時串流至前端，結束後以 \texttt{job\_update} 回報最終狀態與 return code。當目標底層工具（如 \texttt{wifite}、\texttt{aireplay-ng}）未安裝於執行環境時，系統自動切換為\textbf{模擬模式}，輸出預先定義之階段性訊息（監聽模式切換、掃描、封包擷取進度），使前端串流管線與工作生命週期可在無實體工具的開發機上完整驗證，並於稽核紀錄中明確標記為模擬輸出。
 
 \section{無線入侵偵測模組（WIDS）開發}
-\texttt{wids.py} 於偵測到 Scapy 可用時，以 \texttt{sniff()} 於監聽模式介面上擷取管理訊框；若 Scapy 或監聽模式硬體不可用，則退回模擬事件迴圈，兩者共用相同的事件輸出格式（\texttt{ts}、\texttt{type}、\texttt{message}、\texttt{severity}、\texttt{iface}），確保前端事件面板行為一致。
+\texttt{wids.py} 以 \texttt{sniff()} 於監聽模式介面上擷取管理訊框。啟動前會驗證介面、monitor mode、頻道鎖定與 raw capture 權限；任一步驟失敗即回報錯誤，不產生合成 WIDS 證據。
 
 \textbf{大量重傳與偵測邏輯}：目前已實作之 Deauth flood 偵測，以滑動 5 秒時間窗計數 \texttt{Dot11Deauth} 訊框數量，若時間窗內累積超過 20 個訊框，即觸發 \texttt{deauth\_flood} 高嚴重度事件。此設計與既有 802.11 WIDS 文獻中以 deauth 訊框發送速率、訊框大小與訊框間隔作為特徵之簽章式偵測方法一致\cite{sethuraman2019wids}；門檻值本身則為初始設定，尚待第五章實體測試以統計正常網路之背景雜訊率後校準。
 
-\textbf{惡意熱點辨識演算法}：對應第三章之高信度關聯規則──偵測到 Deauth 突發流量後，若隨即出現「相同 SSID、不同 BSSID」之新 AP，即判定為 Evil Twin 高度可疑特徵並觸發告警；若僅偵測到其一則記錄為一般異常事件。相較於既有研究多採用用戶端側之 DNS 往返時間量測\cite{han2011timingrogueap}判斷是否連上 Rogue AP，本研究之偵測邏輯部署於 WIDS（監聽端）而非受測 T-Box 端，優點是不須修改車機軟體即可監控，但亦因此無法得知車機實際是否已連線至偽造熱點，須與 5.2 節之 Step 5 主動觀測結果交叉比對方能完整判定。此關聯訊號較單獨偵測 Deauth 或 Rogue AP 更具因果證據力，亦是 5.2 節攻擊鏈實驗之核心判定依據。beacon flood、握手異常（如 M2 未先於 M1 出現）等偵測項目目前於模擬迴圈中以合成事件呈現，實體 Scapy 偵測邏輯之特徵擷取仍待第七章未來工作補強。
+\textbf{惡意熱點辨識演算法}：WIDS 先學習合法 AP 的 Beacon IE 指紋、Sequence Number、TSF 與 RSSI；Deauth flood 後若相同 SSID／BSSID 出現指紋漂移、序號回跳、TSF 衝突或不自然 RSSI 變化，即判定為同 MAC Evil Twin 可疑事件。偵測邏輯部署於監聽端，不須修改受測 T-Box；惟仍須將 WIDS 告警與受測端實際連線狀態交叉比對，方能形成完整測試結論。
 
 \section{稽核紀錄與即時通訊}
 \texttt{logger.py}（\texttt{TestLogger}）將所有模組事件以 JSON Lines 格式寫入 \texttt{logs/testing.jsonl}，每筆紀錄包含 \texttt{ts}（Unix 時間戳）、\texttt{level}（INFO／WARN／ERROR）、\texttt{category}（\texttt{scan}／\texttt{audit}／\texttt{attack}／\texttt{wids}）與 \texttt{message} 四個欄位，並以固定長度雙端佇列（\texttt{deque}，預設 2000 筆）快取於記憶體中，供 \texttt{/api/logs} 快速回傳最近事件而不需每次讀檔。JSONL 格式便於後續以行為單位串流處理或匯入其他分析工具，亦符合 UN R155 對測試證據應可追溯、逐筆記錄之精神。Socket.IO 事件則涵蓋 \texttt{job\_update}（工作狀態變化）、\texttt{job\_output}（工作即時輸出）與 \texttt{wids\_event}（WIDS 告警），三者皆廣播至所有已連線之前端用戶端。
@@ -431,7 +431,7 @@ E-06 & 稽核追溯（情境一／二共用） & 時間戳、分類、工作 ID 
 逐項回應第一章之研究目的：威脅分類模型見第三章 3.2 節；自動化測試腳本與 WIDS 見第四章 4.4--4.6 節；可視化平台見第四章 4.8 節；授權測試驗證見第五章實驗設計，惟量化結果仍待補充。
 
 \section{測試框架之侷限性與挑戰}
-現階段限制包括：外部工具輸出尚未完整結構化（例如 wifite2 之輸出仍以原始文字串流呈現，未解析為結構化欄位）；WIDS 多數事件仍為骨架或模擬輸出，beacon flood 與握手異常偵測器尚待實作；系統尚未具備角色型身分驗證、正式報告匯出與日誌防竄改機制。此外，在極高頻寬流量下是否存在封包遺失導致偵測漏報之問題，以及框架對未公開零日漏洞之偵測能力，皆屬本方法論之固有限制，須於未來工作中以壓力測試與定期規則更新機制因應。
+現階段限制包括：外部工具輸出尚未完整結構化；WIDS 的門檻值仍待以實體場域樣本校準；系統尚未具備角色型身分驗證、正式報告匯出與日誌防竄改機制。此外，在極高頻寬流量下是否存在封包遺失導致偵測漏報之問題，以及框架對未公開零日漏洞之偵測能力，皆屬本方法論之固有限制，須於未來工作中以壓力測試與定期規則更新機制因應。
 
 \section{合規與實務應用意義}
 本平台可作為 UN R155／ISO-SAE 21434 測試證據產生工具的原型，但仍需由組織流程、供應鏈風險分析、權限控管與正式審查補足完整合規要求；平台本身僅能證明「特定測試情境下之技術防護有效性」，無法取代組織層級之資安管理制度。

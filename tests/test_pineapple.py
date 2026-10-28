@@ -84,6 +84,31 @@ class PineappleTests(unittest.TestCase):
             p.run_evil_twin(client, config(), Path(folder) / 'recovery.json', sleep=during_test)
         self.assertEqual(client.values, original)
 
+    def test_evil_twin_clones_target_mac_channel_and_ssid(self):
+        client = FakeClient()
+        during = {}
+        def inspect(_):
+            during.update(client.values)
+            self.assertEqual(client.pool, config()['target']['ssid'])
+        with tempfile.TemporaryDirectory() as folder, patch('sys.stdout', new=io.StringIO()):
+            p.run_evil_twin(client, config(), Path(folder) / 'recovery.json', sleep=inspect)
+        self.assertEqual(during['pineap_mac'], config()['target']['bssid'])
+        self.assertEqual(during['ap_channel'], str(config()['target']['channel']))
+
+    def test_evil_twin_rejects_a_different_clone_mac(self):
+        value = config()
+        value['evil_twin']['bssid'] = '02:11:22:33:44:99'
+        with self.assertRaises(p.PineappleError):
+            p.validate(value, 'evil-twin')
+
+    @patch.object(Path, 'exists', return_value=True)
+    @patch.object(p.subprocess, 'run')
+    def test_management_route_must_use_selected_interface(self, run, _exists):
+        run.return_value = Mock(returncode=0, stdout='172.16.42.1 dev eth1 src 172.16.42.42\n')
+        p.verify_management_route('http://172.16.42.1:1471', 'eth1')
+        with self.assertRaises(p.PineappleError):
+            p.verify_management_route('http://172.16.42.1:1471', 'enp0s3')
+
     def test_plan_never_connects_with_unconfigured_example(self):
         with patch.object(p, 'Client') as client, patch('sys.stdout', new=io.StringIO()):
             self.assertEqual(p.main(['plan', '--config', str(ROOT / 'configs/pineapple.example.json')]), 0)

@@ -64,6 +64,7 @@
       <label>受測目標 BSSID<input id="cfg-bssid" placeholder="選擇網路或輸入 BSSID"></label>
       <label>頻道<input id="cfg-channel" type="number" value="6" min="1" max="233"></label>
       <label>Deauth 介面<small>（TP-Link / wlan1；Evil Twin 由 Pineapple 經 eth1 執行）</small><select id="attack-iface"><option value="">載入中…</option></select></label>
+      <label>Pineapple 管理介面<small>（USB Ethernet，預設 eth1）</small><select id="pineapple-iface"><option value="">載入中…</option></select></label>
       <div class="run-actions"><button id="run-btn" class="primary big">▶ 開始檢測</button><button id="reset-btn" class="ghost">↺ 重設</button><button id="scenario-stop" class="danger" disabled>停止攻擊測試</button></div>
     </div>
     <p id="target-note" class="target-note" role="status">請先選擇受測目標，再開始檢測流程。</p>
@@ -101,7 +102,7 @@
     </div>
   </section>
     </div>
-    <aside class="wids-block" aria-label="WIDS 無線入侵偵測">
+    <aside class="wids-block" id="wids-panel" aria-label="WIDS 無線入侵偵測">
       <span class="eyebrow">即時監控</span>
     <div class="panel-head">
       <h2>WIDS 無線入侵偵測</h2>
