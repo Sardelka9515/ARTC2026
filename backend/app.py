@@ -5,8 +5,11 @@ Backend entry point (Flask + Socket.IO)
 Project: 車聯網資安測試技術研究 (ARTC / NCU CSIE)
 UN R155 / ISO-SAE 21434 oriented Wi-Fi security test UI skeleton.
 """
+import getpass
+import json
 import os
 import re
+import sys
 import uuid
 import threading
 from flask import Flask, render_template, request, jsonify
@@ -248,6 +251,22 @@ def on_connect():
 
 
 if __name__ == "__main__":
+    config_path = os.environ.get(
+        "PINEAPPLE_CONFIG", os.path.join(BASE_DIR, "configs", "pineapple.local.json")
+    )
+    try:
+        with open(config_path, encoding="utf-8") as stream:
+            pineapple_config = json.load(stream)
+    except FileNotFoundError:
+        pineapple_config = {}
+    if pineapple_config.get("enabled") is True:
+        password_env = pineapple_config.get("password_env", "PINEAPPLE_PASSWORD")
+        if not os.environ.get(password_env):
+            if not sys.stdin.isatty():
+                raise SystemExit(
+                    f"Pineapple password is missing: set {password_env} before starting the platform."
+                )
+            os.environ[password_env] = getpass.getpass("Pineapple password: ")
     print("[*] IoV Wi-Fi Security Testing Platform")
     print("[*] Listening on http://0.0.0.0:5000")
     socketio.run(app, host="0.0.0.0", port=5000, debug=True,

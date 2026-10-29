@@ -1,4 +1,5 @@
 import sys
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -26,6 +27,7 @@ class AttackRunnerTests(unittest.TestCase):
             "python3", "scripts/deauth_test.py", "--interface", "wlan0", "--bssid",
             "AA:BB:CC:DD:EE:FF", "--channel", "6", "--count", "1",
         ])
+        self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
         popen.return_value.wait.assert_called_once()
         self.socket.emit.assert_any_call(
             "job_output", {"job_id": "test-job", "line": "test output"}, namespace="/")

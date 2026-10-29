@@ -33,6 +33,8 @@ FIELDS = {"enablePineAP", "AutoStart", "ap_channel", "beacon_interval",
           "capture_ssids", "connect_notifications", "disconnect_notifications",
           "karma", "logging", "pineap_mac", "target_mac"}
 WRITABLE_FIELDS = FIELDS | {"armedPineAP", "broadcast_ssid_pool_random"}
+# The MK7 Evil WPA hostapd restart varied from 5–25 seconds on the lab device.
+EVIL_TWIN_WARMUP_SECONDS = 30
 
 
 class PineappleError(Exception):
@@ -58,17 +60,12 @@ def bounded(value, low, high, name):
     return value
 
 
-def validate(config, scenario, bssid=None, channel=None):
+def validate(config, scenario, bssid=None, channel=None, ssid=None):
     target = config.get("target", {})
-    target_mac = mac(target.get("bssid"))
-    if bssid is not None and mac(bssid) != target_mac:
-        raise PineappleError("UI 選定 BSSID 與 Pineapple 設定中的測試目標不符。")
-    configured_channel = target.get("channel")
-    bounded(configured_channel, 1, 14, "target.channel（此設定限 2.4 GHz）")
-    if type(configured_channel) is not int:
+    target_mac = mac(bssid)
+    bounded(channel, 1, 14, "channel（此設定限 2.4 GHz）")
+    if type(channel) is not int:
         raise PineappleError("頻道必須為整數。")
-    if channel is not None and channel != configured_channel:
-        raise PineappleError("UI 頻道與 Pineapple 測試設定不符。")
     if scenario == "deauth":
         mac(target.get("client_mac"))
         cfg = config.get("deauth", {})
@@ -78,14 +75,11 @@ def validate(config, scenario, bssid=None, channel=None):
                 raise PineappleError(f"{key} 必須為整數。")
         bounded(cfg.get("interval_seconds"), 0.5, 3, "interval_seconds")
     elif scenario == "evil-twin":
-        ssid = target.get("ssid")
         if not isinstance(ssid, str) or not 1 <= len(ssid.encode()) <= 32 or any(c in ssid for c in '\r\n\x00'):
             raise PineappleError("請填寫 1–32 bytes 的單一測試 SSID。")
         evil = config.get("evil_twin", {})
-        configured_clone = evil.get("bssid")
-        if configured_clone and mac(configured_clone) != target_mac:
-            raise PineappleError("evil_twin.bssid 必須留空或與 target.bssid 相同，才能測試同 MAC 複製偵測。")
         bounded(evil.get("duration_seconds"), 1, 30, "duration_seconds")
+    return target_mac, ssid, channel
 
 
 def verify_management_route(base_url, interface):
@@ -346,7 +340,7 @@ def run_evil_twin(client, config, snapshot_path, sleep=time.sleep, wait=time.sle
             raise PineappleError(f"還原未完成：{exc}。重新接線後執行 restore；復原檔：{snapshot_path}") from None
 
 
-def run_evil_twin_wpa(client, config, snapshot_path, sleep=time.sleep):
+def run_evil_twin_wpa(client, config, snapshot_path, sleep=time.sleep, wait=time.sleep):
     original_open = client.request("GET", OPEN_AP)
     original_wpa = client.request("GET", WPA_AP)
     if not isinstance(original_open, dict) or not isinstance(original_wpa, dict):
@@ -377,8 +371,10 @@ def run_evil_twin_wpa(client, config, snapshot_path, sleep=time.sleep):
                 or current_wpa.get("ssid") != target["ssid"]
                 or str(current_wpa.get("bssid", "")).lower() != target["bssid"].lower()):
             raise PineappleError("裝置未套用預期 Evil WPA Twin 設定；開始還原。")
-        print(f"[evil-twin] Evil WPA Twin 正以相同 SSID/BSSID 於頻道 {target['channel']} 廣播，"
-              f"{evil['duration_seconds']} 秒後還原；已關閉握手擷取。", flush=True)
+        print(f"[evil-twin] 設定已接受；等待無線服務啟動 {EVIL_TWIN_WARMUP_SECONDS} 秒。", flush=True)
+        wait(EVIL_TWIN_WARMUP_SECONDS)
+        print(f"[evil-twin] 開始 {evil['duration_seconds']} 秒 RF 觀測窗："
+              f"SSID/BSSID 於頻道 {target['channel']}；已關閉握手擷取。", flush=True)
         sleep(evil["duration_seconds"])
     finally:
         try:
@@ -392,8 +388,9 @@ def main(argv=None):
     parser.add_argument("action", choices=("plan", "check", "deauth", "evil-twin", "restore"))
     parser.add_argument("--config", type=Path, default=Path(os.environ.get("PINEAPPLE_CONFIG", DEFAULT_CONFIG)))
     parser.add_argument("--execute", action="store_true", help="實際執行測試；仍需 enabled=true")
-    parser.add_argument("--bssid", help="驗證 UI 目標與設定一致")
-    parser.add_argument("--channel", type=int, help="驗證 UI 頻道與設定一致")
+    parser.add_argument("--bssid", help="本次測試目標 BSSID")
+    parser.add_argument("--ssid", help="本次測試目標 SSID")
+    parser.add_argument("--channel", type=int, help="本次測試目標頻道")
     parser.add_argument("--management-interface", help="Pineapple USB 管理介面（例如 eth1）")
     args = parser.parse_args(argv)
     config = json.loads(args.config.read_text())
@@ -409,7 +406,8 @@ def main(argv=None):
     if args.action in ("deauth", "evil-twin"):
         if config.get("enabled") is not True:
             raise PineappleError("裝置尚未啟用：完成設定後將 enabled 改為 true。")
-        validate(config, args.action, args.bssid, args.channel)
+        bssid, ssid, channel = validate(config, args.action, args.bssid, args.channel, args.ssid)
+        config["target"].update(bssid=bssid, ssid=ssid, channel=channel)
     management_interface = args.management_interface or config.get("management_interface")
     verify_management_route(config.get("base_url", ""), management_interface)
     client = Client(config)

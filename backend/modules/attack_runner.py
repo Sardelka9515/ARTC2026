@@ -7,6 +7,7 @@ Fallbacks: aireplay-ng, reaver, bully, hcxdumptool
 Evil Twin (rogue_ap) runs on the WiFi Pineapple over eth1 (engine=pineapple),
 not local hostapd.
 """
+import json
 import os
 import shlex
 import shutil
@@ -119,6 +120,19 @@ class AttackRunner:
             config = Path(os.environ.get("PINEAPPLE_CONFIG", root / "configs/pineapple.local.json"))
             if not config.is_file():
                 raise ValueError("尚未設定 Pineapple：請先建立 configs/pineapple.local.json")
+            try:
+                config_data = json.loads(config.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Pineapple 設定檔無法讀取：{exc}") from None
+            if not isinstance(config_data, dict):
+                raise ValueError("Pineapple 設定檔需為 JSON object")
+            password_env = config_data.get("password_env", "PINEAPPLE_PASSWORD")
+            if not isinstance(password_env, str) or not password_env:
+                raise ValueError("Pineapple password_env 設定無效")
+            if not os.environ.get(password_env):
+                raise ValueError(
+                    f"Pineapple 密碼環境變數 {password_env} 未設定；請重新啟動平台並在終端輸入密碼。"
+                )
             management_interface = str(params.get("management_interface", "")).strip()
             if management_interface:
                 if not re.fullmatch(r"[A-Za-z0-9_.:-]+", management_interface):
@@ -131,6 +145,8 @@ class AttackRunner:
                     "--config", str(config.resolve()), "--execute",
                     "--bssid", str(params.get("bssid", "")),
                     "--channel", str(params.get("channel", ""))]
+            if scenario == "rogue_ap":
+                argv.extend(["--ssid", str(params.get("ssid", ""))])
             if management_interface:
                 argv.extend(["--management-interface", management_interface])
             cmd = shlex.join(argv)
@@ -209,6 +225,7 @@ class AttackRunner:
         try:
             job.proc = subprocess.Popen(
                 shlex.split(job.cmd),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True, bufsize=1,

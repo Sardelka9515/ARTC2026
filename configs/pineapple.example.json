@@ -6,9 +6,6 @@
   "password_env": "PINEAPPLE_PASSWORD",
   "request_timeout": 5,
   "target": {
-    "bssid": "",
-    "ssid": "",
-    "channel": 6,
     "client_mac": ""
   },
   "deauth": {
@@ -17,7 +14,6 @@
     "multiplier": 1
   },
   "evil_twin": {
-    "bssid": "",
     "duration_seconds": 15
   }
 }

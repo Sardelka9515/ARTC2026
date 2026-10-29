@@ -61,11 +61,8 @@ chmod 600 configs/pineapple.local.json
 | `management_interface` | VM 的 Pineapple USB Ethernet 名稱，預設 `eth1`；也可在首頁選擇 |
 | `username` | 預設 `root` |
 | `password_env` | 保存密碼的環境變數名稱，預設 `PINEAPPLE_PASSWORD`；不是密碼本身 |
-| `target.bssid` | 合法測試 AP 的 BSSID，須與首頁選擇相同 |
-| `target.ssid` | 合法 AP 的完整 SSID，大小寫與空白必須一致 |
-| `target.channel` | 合法 AP、Pineapple 測試與 WIDS 共同使用的頻道 |
+| Evil Twin 測試目標 | BSSID、SSID 與頻道不寫入 JSON；由首頁目前選定的 AP 傳給控制器並驗證格式 |
 | `target.client_mac` | 已連上合法 AP 的測試 STA／T-BOX MAC，注意裝置的隨機 MAC 設定 |
-| `evil_twin.bssid` | 留空，或填入與 `target.bssid` 相同的位址；腳本拒絕不同 MAC |
 | `evil_twin.duration_seconds` | 同名熱點廣播時間，預設 15 秒，最多 30 秒 |
 | `deauth.bursts` | API 請求次數，預設 5，最多 10 |
 | `deauth.interval_seconds` | 請求間隔，預設 1 秒 |
@@ -109,9 +106,9 @@ tboxvenv/bin/python backend/app.py
 本次雙網卡分工為 MediaTek `wlan0` 先掃描、再切換為 WIDS，TP-Link `wlan1` 專供 deauth；Pineapple 管理鏈路預設 `eth1`。三個介面都可在首頁手動選擇。未發現 AP 時顯示空結果，不產生示範 AP 或虛構介面。
 
 1. 先讓合法測試 AP 固定頻道，確認測試 STA 已連上它；此時 Pineapple 不廣播測試 SSID。
-2. 首頁掃描並選擇合法 AP，確保 BSSID／SSID／channel 與 JSON 相同。
+2. 首頁掃描並選擇合法 AP；BSSID、SSID 與頻道皆使用本次選定值。
 3. 右側 WIDS 選擇 `wlan0` 與相同頻道。流程執行到第 8 項時會自動啟動並保持監聽到第 28 項結束；也可手動按「啟動」。選定的合法 AP 會作為信任基準。
-4. 等待 WIDS 顯示監聽中，確認 frames 增加；不是只看到 REST 連線成功就算完成。測試會先備份裝置的 AP 與 SSID pool 設定，結束後完整還原。
+4. 等待 WIDS 顯示監聽中，確認 frames 增加；不是只看到 REST 連線成功就算完成。實機量測 Evil WPA 無線服務重啟約需 5–25 秒，因此設定寫入後會預留 30 秒，再開始設定的 RF 觀測時間。測試會先備份裝置的 AP 與 SSID pool 設定，結束後完整還原。
 5. 將 JSON 的 `enabled` 改為 `true`。首頁「第 28 項攻擊裝置」選 WiFi Pineapple VII，第一次可只勾第 28 項，按「開始檢測」。會依序執行 deauth、同名 SSID 廣播。前一段失敗或停止時，不繼續後一段。
 6. 保持右側 WIDS 手動啟動狀態，觀察 `deauth_flood`、`evil_twin` 等事件。第 5／8／9 項的流程觀測窗本來在第 28 項之前；那些先前結果不會回溯更新成攻擊後的結果，**本次攻擊證據請看右側即時事件及日誌**。
 7. 完成後確認 PineAP 已還原，再停止 WIDS。紀錄 AP／STA、頻道、時間、Pineapple 工作結果、WIDS 告警與受測端是否斷線。
@@ -148,4 +145,4 @@ python3 scripts/pineapple.py check --config configs/pineapple.local.json
 - [PineAP settings、SSID pool 與定向 deauth](https://hak5.github.io/mk7-docs/docs/rest/pineap/pineap/)
 - [Open AP 與 Evil WPA Twin AP](https://hak5.github.io/mk7-docs/docs/rest/settings/settings/)
 
-尚待填寫／確認：VM USB 介面名稱、Pineapple 韌體版本與管理密碼、合法 AP BSSID／SSID／頻道、測試 STA MAC、WIDS 網卡 monitor-mode 能力，以及實機 RF 告警結果。
+尚待填寫／確認：VM USB 介面名稱、Pineapple 韌體版本與管理密碼、測試 STA MAC、WIDS 網卡 monitor-mode 能力，以及實機 RF 告警結果。

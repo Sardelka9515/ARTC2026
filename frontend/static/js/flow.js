@@ -342,7 +342,9 @@ function runScenarioJob(scenario, extra) {
     };
     const onUpd = (job) => {
       if (job.job_id !== jobId || !["finished", "error", "killed"].includes(job.status)) return;
-      log(`Job ${jobId} ${job.status}（rc=${job.return_code}）。`, job.status === "finished" ? "ok" : "fail");
+      const level = job.status === "finished" && scenario !== "rogue_ap" ? "ok"
+        : job.status === "finished" ? "info" : "fail";
+      log(`Job ${jobId} ${job.status}（rc=${job.return_code}）。`, level);
       finish({ok: job.status === "finished", lines, status: job.status});
     };
     socket.on("job_output", onOut);
@@ -355,6 +357,9 @@ function runScenarioJob(scenario, extra) {
         if (scenario === "rogue_ap") {
           params.engine = "pineapple";
           params.management_interface = $("#pineapple-iface")?.value || "";
+          params.ssid = (ctx.networks || []).find(
+            network => network.bssid.toLowerCase() === ctx.bssid.toLowerCase()
+          )?.ssid || "";
         } else if (scenario === "deauth") {
           params.engine = "local";
           params.interface = $("#attack-iface")?.value || ctx.iface;

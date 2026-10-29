@@ -94,6 +94,7 @@
     <div class="dock-body" id="dock-body">
       <div class="log-toolbar">
         <span id="log-count" class="log-count">0 行</span>
+        <button id="log-save" class="ghost sm" onclick="const a=document.createElement('a'),u=URL.createObjectURL(new Blob([document.getElementById('logstream').innerText],{type:'text/plain'}));a.href=u;a.download='testing-log.txt';a.hidden=true;document.body.append(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(u)},1000)">儲存日誌</button>
         <button id="log-clear" class="ghost sm">清除</button>
       </div>
       <div class="logstream" id="logstream">

@@ -98,19 +98,15 @@ chmod 600 configs/pineapple.local.json
   "management_interface": "eth1",
   "password_env": "PINEAPPLE_PASSWORD",
   "target": {
-    "bssid": "受測 AP BSSID",
-    "ssid": "受測 SSID",
-    "channel": 6
+    "client_mac": "受測 STA MAC（僅 Pineapple deauth 使用）"
   },
   "evil_twin": {
-    "bssid": "",
     "duration_seconds": 15
   }
 }
 ```
 
-- `target` 必須是已授權且位於隔離環境的測試目標。
-- `evil_twin.bssid` 應留空，或設定為與 `target.bssid` 相同。
+- Evil Twin 的 BSSID、SSID 與頻道都由網頁目前選定的測試目標傳入，不固定寫在 JSON。
 - Pineapple 密碼不可寫入 JSON。
 
 ### 4. 每次啟動前：準備網卡
@@ -156,6 +152,10 @@ sudo --preserve-env=PINEAPPLE_PASSWORD,PINEAPPLE_CONFIG \
 sudo --preserve-env=PINEAPPLE_PASSWORD,PINEAPPLE_CONFIG \
   ./tboxvenv/bin/python3 backend/app.py
 ```
+
+重新開機後環境變數會消失。若 `enabled` 為 `true` 且未先匯出密碼，互動式啟動會在
+後端終端提示一次 Pineapple 密碼；非互動式啟動則會立即報錯。網頁啟動的工作不會
+讀取終端輸入，因此不會再因等待隱藏的密碼提示而於 120 秒後逾時。
 
 瀏覽器開啟：
 

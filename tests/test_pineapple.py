@@ -19,7 +19,8 @@ from modules.attack_runner import AttackRunner
 def config():
     value = json.loads((ROOT / 'configs/pineapple.example.json').read_text())
     value['enabled'] = True
-    value['target'].update(bssid='02:11:22:33:44:55', ssid='ARTC-LAB', client_mac='02:11:22:33:44:66')
+    value['target'].update(bssid='02:11:22:33:44:55', ssid='ARTC-LAB', channel=6,
+                           client_mac='02:11:22:33:44:66')
     return value
 
 
@@ -99,13 +100,16 @@ class PineappleTests(unittest.TestCase):
                     self.wpa = value
         client = WpaClient()
         original_open, original_wpa = copy.deepcopy(client.open), copy.deepcopy(client.wpa)
+        warmup = Mock()
         def inspect(_):
             self.assertEqual(client.open['channel'], 6)
             self.assertEqual(client.wpa['ssid'], 'ARTC-LAB')
             self.assertEqual(client.wpa['bssid'], '02:11:22:33:44:55'.upper())
             self.assertFalse(client.wpa['capture_handshakes'])
         with tempfile.TemporaryDirectory() as folder, patch('sys.stdout', new=io.StringIO()):
-            p.run_evil_twin_wpa(client, config(), Path(folder) / 'recovery.json', sleep=inspect)
+            p.run_evil_twin_wpa(client, config(), Path(folder) / 'recovery.json',
+                                sleep=inspect, wait=warmup)
+        warmup.assert_called_once_with(p.EVIL_TWIN_WARMUP_SECONDS)
         self.assertEqual(client.open, original_open)
         self.assertEqual(client.wpa, original_wpa)
 
@@ -141,11 +145,12 @@ class PineappleTests(unittest.TestCase):
         self.assertEqual(during['pineap_mac'], config()['target']['bssid'].upper())
         self.assertEqual(during['ap_channel'], str(config()['target']['channel']))
 
-    def test_evil_twin_rejects_a_different_clone_mac(self):
+    def test_command_target_replaces_config_target(self):
         value = config()
         value['evil_twin']['bssid'] = '02:11:22:33:44:99'
-        with self.assertRaises(p.PineappleError):
-            p.validate(value, 'evil-twin')
+        self.assertEqual(p.validate(value, 'evil-twin', bssid='02:11:22:33:44:88',
+                                    ssid='CURRENT-AP', channel=11),
+                         ('02:11:22:33:44:88', 'CURRENT-AP', 11))
 
     @patch.object(Path, 'exists', return_value=True)
     @patch.object(p.subprocess, 'run')
@@ -166,20 +171,41 @@ class PineappleTests(unittest.TestCase):
                 p.main(['deauth', '--execute', '--config', str(ROOT / 'configs/pineapple.example.json')])
             client.assert_not_called()
 
-    def test_target_and_channel_must_match(self):
-        for kwargs in ({'bssid': '02:00:00:00:00:99'}, {'channel': 11}):
+    def test_command_target_fields_are_validated(self):
+        self.assertEqual(p.validate(config(), 'deauth', bssid='02:00:00:00:00:99', channel=11),
+                         ('02:00:00:00:00:99', None, 11))
+        for kwargs in ({'bssid': None}, {'bssid': 'invalid'},
+                       {'bssid': '02:00:00:00:00:99', 'channel': 0},
+                       {'bssid': '02:00:00:00:00:99', 'channel': 6, 'ssid': ''}):
             with self.assertRaises(p.PineappleError):
-                p.validate(config(), 'deauth', **kwargs)
+                p.validate(config(), 'evil-twin', **kwargs)
+
+    def test_main_uses_command_bssid_as_runtime_target(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cfg = Path(folder) / 'device.json'
+            cfg.write_text(json.dumps(config()))
+            client = Mock()
+            with patch.object(p, 'verify_management_route'), \
+                    patch.object(p, 'Client', return_value=client), \
+                    patch.object(p, 'run_evil_twin') as run:
+                self.assertEqual(p.main([
+                    'evil-twin', '--execute', '--config', str(cfg),
+                    '--bssid', '02:11:22:33:44:88', '--ssid', 'CURRENT-AP', '--channel', '11',
+                ]), 0)
+            self.assertEqual(run.call_args.args[1]['target']['bssid'],
+                             '02:11:22:33:44:88')
+            self.assertEqual(run.call_args.args[1]['target']['ssid'], 'CURRENT-AP')
+            self.assertEqual(run.call_args.args[1]['target']['channel'], 11)
 
     def test_broadcast_client_and_unbounded_bursts_rejected(self):
         c = config()
         c['target']['client_mac'] = 'ff:ff:ff:ff:ff:ff'
         with self.assertRaises(p.PineappleError):
-            p.validate(c, 'deauth')
+            p.validate(c, 'deauth', bssid='02:11:22:33:44:55', channel=6)
         c = config()
         c['deauth']['bursts'] = 10000
         with self.assertRaises(p.PineappleError):
-            p.validate(c, 'deauth')
+            p.validate(c, 'deauth', bssid='02:11:22:33:44:55', channel=6)
 
     def test_deauth_is_finite_and_client_scoped(self):
         client = FakeClient()
@@ -263,14 +289,29 @@ class PineappleTests(unittest.TestCase):
             cfg = Path(folder) / 'device.json'
             cfg.write_text(json.dumps(config()))
             runner = AttackRunner(Mock(), Mock())
-            with patch.dict(os.environ, {'PINEAPPLE_CONFIG': str(cfg)}), patch('modules.attack_runner.threading.Thread'):
+            with patch.dict(os.environ, {'PINEAPPLE_CONFIG': str(cfg),
+                                         'PINEAPPLE_PASSWORD': 'test-secret'}), \
+                    patch('modules.attack_runner.threading.Thread'):
                 job = runner.start('test', 'rogue_ap', {'engine': 'pineapple', 'bssid': config()['target']['bssid'],
-                                                       'channel': 6, 'config_path': '/untrusted/browser/path'})
+                                                       'ssid': config()['target']['ssid'], 'channel': 6,
+                                                       'config_path': '/untrusted/browser/path'})
             argv = shlex.split(job.cmd)
             self.assertIn(str(cfg), argv)
             self.assertIn('evil-twin', argv)
+            self.assertEqual(argv[argv.index('--ssid') + 1], config()['target']['ssid'])
             self.assertNotIn('/untrusted/browser/path', argv)
             self.assertNotIn('hostapd', argv)
+
+    def test_runner_rejects_missing_password_before_starting_job(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cfg = Path(folder) / 'device.json'
+            cfg.write_text(json.dumps(config()))
+            runner = AttackRunner(Mock(), Mock())
+            with patch.dict(os.environ, {'PINEAPPLE_CONFIG': str(cfg)}, clear=True), \
+                    patch('modules.attack_runner.threading.Thread') as thread:
+                with self.assertRaisesRegex(ValueError, 'PINEAPPLE_PASSWORD'):
+                    runner.start('test', 'rogue_ap', {'engine': 'pineapple'})
+            thread.assert_not_called()
 
     def test_recovery_refuses_different_device(self):
         with tempfile.TemporaryDirectory() as folder:

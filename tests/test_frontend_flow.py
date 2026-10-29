@@ -32,6 +32,9 @@ class FrontendFlowTests(unittest.TestCase):
         self.assertIn('event.type === "deauth_flood"', attack)
         self.assertIn('"tsf_collision"', attack)
 
+    def test_evil_twin_uses_selected_network_ssid(self):
+        self.assertIn('params.ssid = (ctx.networks || []).find(', self.js)
+
 
 if __name__ == "__main__":
     unittest.main()
